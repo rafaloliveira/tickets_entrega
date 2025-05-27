@@ -1182,7 +1182,7 @@ with aba2:
     else:
         num_colunas = 4
         colunas = st.columns(num_colunas)
-        st_autorefresh(interval=120000, key="ocorrencias_abertas_refresh")
+        st_autorefresh(interval=50000, key="ocorrencias_abertas_refresh")
 
         for idx, ocorr in enumerate(ocorrencias_abertas):
             status = "Data manual ausente"
@@ -1263,10 +1263,9 @@ with aba2:
                         placeholder="Descreva aqui o complemento da ocorrência..."
                     )
 
-                    # Botão Finalizar
+                    # Botão Finalizar: apenas exibe mensagem se clicado com campo vazio
                     if st.button("Finalizar", key=f"finalizar_{safe_idx}"):
                         complemento = st.session_state.get(complemento_key, "").strip()
-
                         if not complemento:
                             st.warning("❌ O campo 'Complementar' é obrigatório.")
                         else:
@@ -1280,27 +1279,12 @@ with aba2:
                                 hora_finalizacao_manual
                             )
 
-                           
-                            # Dentro do seu botão Finalizar
                             if sucesso:
-                                st.success("✅ Ticket finalizado com sucesso!")
-
-                                # Remove o ticket finalizado da lista de tickets abertos
-                                tickets = st.session_state.get("tickets_abertos", [])
-                                st.session_state["tickets_abertos"] = [
-                                    t for t in tickets if t["id"] != ocorr["id"]
-                                ]
-
-                                # Espera 1.5 segundos para o usuário ver a mensagem
-                                time.sleep(1.5)
-
-                                # Recarrega a interface com os dados atualizados
-                                st.rerun()
+                                from streamlit.runtime.caching import cache_data
+                                cache_data.clear()  # limpa o cache da lista de ocorrências abertas
+                                st.rerun()  # recarrega a página com dados atualizados
                             else:
                                 st.warning(f"⚠️ A finalização falhou: {mensagem}")
-
-
-
 
 
 
@@ -1532,54 +1516,31 @@ with aba5:
                             with st.expander("Finalizar Ocorrência"):
                                 data_atual = obter_data_hora_atual_brasil().strftime("%d-%m-%Y")
                                 hora_atual = obter_data_hora_atual_brasil().strftime("%H:%M")
-                                data_finalizacao_manual = st.text_input("Data Finalização (DD-MM-AAAA)", value=data_atual, key=f"data_final_{safe_idx}")
-                                hora_finalizacao_manual = st.text_input("Hora Finalização (HH:MM)", value=hora_atual, key=f"hora_final_{safe_idx}")
+                                data_finalizacao_manual = st.text_input("Data Finalização", value=data_atual, key=f"data_final_{safe_idx}")
+                                hora_finalizacao_manual = st.text_input("Hora Finalização", value=hora_atual, key=f"hora_final_{safe_idx}")
 
-                                # Chave única para o campo complementar
                                 complemento_key = f"complemento_final_{safe_idx}"
+                                if complemento_key not in st.session_state:
+                                    st.session_state[complemento_key] = ""
 
-                                # Campo de texto: mantido sempre atualizado no session_state
-                                complemento = st.text_area(
-                                    "Complementar não Fiscal", 
-                                    key=complemento_key, 
-                                    placeholder="Descreva aqui o complemento da ocorrência..."
-                                )
+                                complemento = st.text_area("Complementar", key=complemento_key, value=st.session_state[complemento_key])
+                                finalizar_disabled = not complemento.strip()
 
-                                # Botão Finalizar
-                                if st.button("Finalizar", key=f"finalizar_{safe_idx}"):
-                                    complemento = st.session_state.get(complemento_key, "").strip()
-
-                                    if not complemento:
-                                        st.warning("❌ O campo 'Complementar' é obrigatório.")
+                                if st.button("Finalizar", key=f"finalizar_{safe_idx}", disabled=finalizar_disabled):
+                                    if finalizar_disabled:
+                                        st.error("❌ O campo 'Complementar' é obrigatório.")
                                     else:
-                                        st.toast("✅ Ticket sendo finalizado...")
-
-                                        # Finaliza no banco
                                         sucesso, mensagem = finalizar_ocorrencia(
-                                            ocorr, 
-                                            complemento, 
-                                            data_finalizacao_manual, 
-                                            hora_finalizacao_manual
+                                            ocorr, complemento, data_finalizacao_manual, hora_finalizacao_manual
                                         )
-
-                                    
-                                        # Dentro do seu botão Finalizar
                                         if sucesso:
-                                            st.success("✅ Ticket finalizado com sucesso!")
-
-                                            # Remove o ticket finalizado da lista de tickets abertos
-                                            tickets = st.session_state.get("tickets_abertos", [])
-                                            st.session_state["tickets_abertos"] = [
-                                                t for t in tickets if t["id"] != ocorr["id"]
-                                            ]
-
-                                            # Espera 1.5 segundos para o usuário ver a mensagem
-                                            time.sleep(1.5)
-
-                                            # Recarrega a interface com os dados atualizados
+                                            st.success(mensagem)
+                                            time.sleep(2)
                                             st.rerun()
                                         else:
-                                            st.warning(f"⚠️ A finalização falhou: {mensagem}")
+                                            st.error(mensagem)
+        else:
+            st.info("👈 Selecione um focal para ver suas ocorrências.")
 
 
 # =========================
