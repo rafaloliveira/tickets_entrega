@@ -17,6 +17,7 @@ import hashlib
 import psycopg2
 import smtplib
 import socket
+import requests
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta, timezone
@@ -24,6 +25,8 @@ from dateutil import parser
 from psycopg2 import sql
 from io import BytesIO
 from dotenv import load_dotenv
+from email.mime.image import MIMEImage
+
 
 from streamlit_autorefresh import st_autorefresh
 import streamlit_authenticator as stauth
@@ -286,7 +289,9 @@ def inserir_ocorrencia_supabase(dados):
             "data_abertura_manual": dados["data_abertura_manual"],
             "hora_abertura_manual": dados["hora_abertura_manual"],
             "email_abertura_enviado": False,
-            "email_finalizacao_enviado": False
+            "email_finalizacao_enviado": False,
+            "imagem_url": dados["imagem_url"]
+
         }]).execute()
         return response
     else:
@@ -619,14 +624,15 @@ with aba1:
                         nome_arquivo = f"{nova_ocorrencia['id']}_{imagem.name}"
 
                         # ✅ Corrigido: enviar os bytes com .read()
-                        supabase.storage.from_("ocorrencias").upload(
+                        supabase.storage.from_("imagem-ticket").upload(
                             nome_arquivo,
                             imagem.read(),  # <- conteúdo binário
                             file_options={"content-type": imagem.type}
                         )
 
                         # Gera URL pública
-                        url_imagem = supabase.storage.from_("ocorrencias").get_public_url(nome_arquivo)
+                        # gerar URL (corrigir aqui)
+                        url_imagem = supabase.storage.from_("imagem-ticket").get_public_url(nome_arquivo)
                         nova_ocorrencia["imagem_url"] = url_imagem
 
                     except Exception as e:
@@ -639,6 +645,7 @@ with aba1:
                 # Inserção no banco de dados
                 response = inserir_ocorrencia_supabase(nova_ocorrencia)
                 
+                
                 if response and response.data:
                     # Adiciona localmente para exibição imediata
                     nova_ocorrencia_local = nova_ocorrencia.copy()
@@ -649,6 +656,7 @@ with aba1:
 
                     sucesso = st.empty()
                     sucesso.success("✅ Ocorrência aberta com sucesso!")
+                    #st.write("✅ Imagem URL salva:", nova_ocorrencia["imagem_url"])
                     time.sleep(2)
                     sucesso.empty()
                     
@@ -755,40 +763,47 @@ def marcar_email_como_enviado(ocorrencia_id, tipo="abertura"):
         st.error(f"Erro ao atualizar status de e-mail enviado: {e}")
         return False
 
-def enviar_email(destinatario, copia, assunto, corpo):
-    """Envia e-mail usando as configurações da KingHost."""
+def enviar_email(destinatario, copia, assunto, corpo, imagem_url=None):
+    """Envia e-mail com corpo HTML e anexo de imagem (se fornecido)."""
     try:
         # Criar mensagem
         msg = MIMEMultipart()
         msg['From'] = EMAIL_REMETENTE
         msg['To'] = destinatario
-        
-        # Adicionar cópias se existirem
+
+        # CC (cópia)
+        todos_destinatarios = [destinatario]
         if copia:
-            # Separar múltiplos e-mails em CC (separados por ponto e vírgula)
             emails_cc = [email.strip() for email in copia.split(';') if email.strip()]
             if emails_cc:
                 msg['Cc'] = ', '.join(emails_cc)
-        
+                todos_destinatarios += emails_cc
+
         msg['Subject'] = assunto
-        
-        # Adicionar corpo do e-mail
         msg.attach(MIMEText(corpo, 'html'))
-        
-        # Conectar ao servidor SMTP com timeout
+
+        # 📎 Anexar imagem (se fornecida e válida)
+        if imagem_url:
+            try:
+                print("URL da imagem:", imagem_url)  # 👈 Diagnóstico
+                response = requests.get(imagem_url)
+                print("Status da requisição:", response.status_code)
+                response = requests.get(imagem_url)
+                if response.status_code == 200:
+                    img_data = response.content
+                    image_mime = MIMEImage(img_data)
+                    image_mime.add_header('Content-Disposition', 'attachment', filename="imagem_ocorrencia.jpg")
+                    msg.attach(image_mime)
+            except Exception as e:
+                print(f"Erro ao anexar imagem: {e}")
+
+        # Enviar via SMTP
         server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10)
         server.starttls()
         server.login(EMAIL_REMETENTE, EMAIL_SENHA)
-        
-        # Determinar todos os destinatários (principal + cópias)
-        todos_destinatarios = [destinatario]
-        if copia:
-            todos_destinatarios.extend([email.strip() for email in copia.split(';') if email.strip()])
-        
-        # Enviar e-mail
         server.sendmail(EMAIL_REMETENTE, todos_destinatarios, msg.as_string())
         server.quit()
-        
+
         return True, "E-mail enviado com sucesso"
     except socket.timeout:
         return False, "Timeout ao conectar ao servidor SMTP. Possível bloqueio de firewall."
@@ -797,119 +812,146 @@ def enviar_email(destinatario, copia, assunto, corpo):
     except Exception as e:
         return False, f"Erro ao enviar e-mail: {e}"
 
+
+
+
 def verificar_e_enviar_email_abertura(ocorrencia):
+    
     """Verifica se a ocorrência precisa de e-mail e envia se necessário."""
     try:
-        # Verificar se já passou 30 minutos desde a abertura
         agora = obter_data_hora_atual_brasil()
         
+
         if ocorrencia.get("data_abertura_manual") and ocorrencia.get("hora_abertura_manual"):
-            # Criar datetime a partir das strings de data e hora manual
+            # Criar datetime
             data_hora_abertura = criar_datetime_manual(
                 ocorrencia["data_abertura_manual"], 
                 ocorrencia["hora_abertura_manual"]
             )
-            
+
             if not data_hora_abertura:
                 return False, "Erro ao criar datetime a partir de data/hora manual"
-            
-            # Verificar se passou mais de 30 minutos
+
+            # Verificar se passou 30 minutos
             diferenca = calcular_diferenca_tempo(data_hora_abertura, agora)
-            if diferenca > timedelta(minutes=30):
-                # Carregar dados do cliente
-                clientes_emails = carregar_dados_clientes_email()
-                cliente = ocorrencia.get('cliente')
-                
-                if cliente in clientes_emails:
-                    email_info = clientes_emails[cliente]
-                    email_principal = email_info['principal']
-                    email_copia = email_info['copia']
-
-                    # Carregar imagem antes da string HTML
-                    imagem_url = ocorrencia.get("imagem_url", "")
-                    imagem_html = f'<br><a href="{imagem_url}" target="_blank" style="text-decoration:none;">📷</a>' if imagem_url else ""
-
-                    
-                    # Formatar data/hora para exibição
-                    data_hora_str = f"{ocorrencia['data_abertura_manual']} {ocorrencia['hora_abertura_manual']}"
-                    
-                    # Criar corpo do e-mail
-                    corpo_html = f"""
-                    <html>
-                    <head>
-                        <style>
-                            body {{ font-family: Arial, sans-serif; }}
-                            table {{ border-collapse: collapse; width: 100%; }}
-                            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-                            th {{ background-color: #f2f2f2; }}
-                            .header {{ background-color: #f08104; color: white; padding: 10px; }}
-                        </style>
-                    </head>
-                    <body>
-                        <div class="header">
-                            <h2>Notificação de Ocorrência Aberta</h2>
-                        </div>
-                        <p>Prezado cliente <strong>{cliente}</strong>,</p>
-                        <p>O veículo com a entrega abaixo identificada encontra-se no ponto de descarga a 30min.</p>
-                        <p>Após 45 min de tempo de permanência haverá aplicação da TDE conforme especificado</p>
-                        <p>em tabela. Pedimos sua interferência no processo de descarga para evitar custos extras.</p>
-                        <table>
-                            <tr>
-                                <th>Ticket</th>
-                                <th>Nota Fiscal</th>
-                                <th>Destinatário</th>
-                                <th>Cidade</th>
-                                <th>Motorista</th>
-                                <th>Tipo</th>
-                                <th>Data/Hora Abertura</th>
-                            </tr>
-                            <tr>
-                                <td>{ocorrencia.get('numero_ticket', '-')}</td>
-                                <td>{ocorrencia.get('nota_fiscal', '-')}</td>
-                                <td>{ocorrencia.get('destinatario', '-')}</td>
-                                <td>{ocorrencia.get('cidade', '-')}</td>
-                                <td>{ocorrencia.get('motorista', '-')}</td>
-                                <td>{ocorrencia.get('tipo_de_ocorrencia', '-')}</td>
-                                <td>{data_hora_str}{imagem_html}</td>
-                                
-                            </tr>
-                        </table>
-                        <p>Por favor, entre em contato conosco para mais informações.</p>
-                        <p>Atenciosamente,<br>Equipe de Monitoramento ClikLog Transportes</p>
-                    </body>
-                    </html>
-                    """
-                    
-                    # Enviar e-mail
-                    assunto = f"Notificação: Ocorrência Aberta - {cliente} - NF {ocorrencia.get('nota_fiscal', '-')}"
-                    sucesso, mensagem = enviar_email(email_principal, email_copia, assunto, corpo_html)
-                    
-                    if sucesso:
-                        # Marcar como enviado no banco
-                        marcar_email_como_enviado(ocorrencia["id"], "abertura")
-                        
-                        # Registrar no histórico
-                        supabase.table("emails_enviados").insert({
-                            "data": obter_data_hora_atual_brasil().strftime("%d-%m-%Y %H:%M:%S"),
-                            "tipo": "Abertura",
-                            "cliente": cliente,
-                            "email": email_principal,
-                            "ticket": ocorrencia.get('numero_ticket', '-'),
-                            "nota_fiscal": ocorrencia.get('nota_fiscal', '-'),
-                            "status": "Enviado"
-                        })
-                        
-                        return True, "E-mail enviado com sucesso"
-                    else:
-                        return False, mensagem
-                else:
-                    return False, "Cliente não possui e-mail cadastrado"
-            else:
+            if diferenca <= timedelta(minutes=30):
                 return False, f"Ocorrência aberta há menos de 30 minutos (diferença: {diferenca})"
+
+            # Obter e-mails do cliente
+            clientes_emails = carregar_dados_clientes_email()
+            cliente = ocorrencia.get('cliente')
+
+            if cliente not in clientes_emails:
+                return False, "Cliente não possui e-mail cadastrado"
+
+            email_info = clientes_emails[cliente]
+            email_principal = email_info['principal']
+            email_copia = email_info['copia']
+
+            # Obter imagem
+            imagem_url = ocorrencia.get("imagem_url", "")
+            imagem_html = (
+                f'<br><img src="{imagem_url}" alt="Imagem da Ocorrência" '
+                f'style="max-width: 400px; margin-top: 10px;"><br>'
+                if imagem_url else ""
+            )
+
+            # Corpo do e-mail
+            data_hora_str = f"{ocorrencia['data_abertura_manual']} {ocorrencia['hora_abertura_manual']}"
+            imagem_url = ocorrencia.get("imagem_url", "")
+
+            if imagem_url:
+                imagem_html = f"""
+                <td>
+                    <strong>Imagem Ticket</strong><br>
+                    <a href="{imagem_url}" target="_blank">Baixar</a>
+                </td>
+                """
+            else:
+                imagem_html = "<td><strong>Imagem Ticket</strong><br>Não anexada</td>"
+
+
+            corpo_html = f"""
+            <html>
+            <head>
+                <style>
+                    body {{ font-family: Arial, sans-serif; }}
+                    table {{ border-collapse: collapse; width: 100%; }}
+                    th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+                    th {{ background-color: #f2f2f2; }}
+                    .header {{ background-color: #f08104; color: white; padding: 10px; }}
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <h2>Notificação de Ocorrência Aberta</h2>
+                </div>
+                <p>Prezado cliente <strong>{cliente}</strong>,</p>
+                <p>O veículo com a entrega abaixo identificada encontra-se no ponto de descarga a 30min.</p>
+                <p>Após 45 min de tempo de permanência haverá aplicação da TDE conforme especificado</p>
+                <p>em tabela. Pedimos sua interferência no processo de descarga para evitar custos extras.</p>
+                <table>
+                    <tr>
+                        <th>Ticket</th>
+                        <th>Nota Fiscal</th>
+                        <th>Destinatário</th>
+                        <th>Cidade</th>
+                        <th>Motorista</th>
+                        <th>Tipo</th>
+                        <th>Data/Hora Abertura</th>
+                        <th>Imagem Ticket</th>
+                    </tr>
+                    <tr>
+                        <td>{ocorrencia.get('numero_ticket', '-')}</td>
+                        <td>{ocorrencia.get('nota_fiscal', '-')}</td>
+                        <td>{ocorrencia.get('destinatario', '-')}</td>
+                        <td>{ocorrencia.get('cidade', '-')}</td>
+                        <td>{ocorrencia.get('motorista', '-')}</td>
+                        <td>{ocorrencia.get('tipo_de_ocorrencia', '-')}</td>
+                        <td>{data_hora_str}</td>
+                        {imagem_html}
+                    </tr>
+                </table>
+                <p>Por favor, entre em contato conosco para mais informações.</p>
+                <p>Atenciosamente,<br>Equipe de Monitoramento ClikLog Transportes</p>
+            </body>
+            </html>
+            """
+
+
+            # Enviar e-mail com imagem em anexo
+            assunto = f"Notificação: Ocorrência Aberta - {cliente} - NF {ocorrencia.get('nota_fiscal', '-')}"
+            sucesso, mensagem = enviar_email(
+                destinatario=email_principal,
+                copia=email_copia,
+                assunto=assunto,
+                corpo=corpo_html,
+                imagem_url=imagem_url
+                
+            )
+
+            if sucesso:
+                marcar_email_como_enviado(ocorrencia["id"], "abertura")
+
+                supabase.table("emails_enviados").insert({
+                    "data": obter_data_hora_atual_brasil().strftime("%d-%m-%Y %H:%M:%S"),
+                    "tipo": "Abertura",
+                    "cliente": cliente,
+                    "email": email_principal,
+                    "ticket": ocorrencia.get('numero_ticket', '-'),
+                    "nota_fiscal": ocorrencia.get('nota_fiscal', '-'),
+                    "status": "Enviado"
+                })
+
+                return True, "E-mail enviado com sucesso"
+            else:
+                return False, mensagem
+
         else:
             return False, "Dados de data/hora de abertura ausentes"
     except Exception as e:
         return False, f"Erro ao verificar e enviar e-mail: {e}"
+
 
 def enviar_email_finalizacao(ocorrencia):
     """Envia e-mail de finalização para o cliente."""
@@ -1215,22 +1257,23 @@ with aba2:
                 with st.container():
                     # Adicionar indicador de e-mail enviado
                     email_enviado = ocorr.get('email_abertura_enviado', False)
-                    email_status = "📧 E-mail enviado{indicador_imagem}" if email_enviado else ""
                     imagem_url = ocorr.get('imagem_url', '')
                     tem_imagem = bool(imagem_url)
-                    indicador_imagem = f' <a href="{imagem_url}" target="_blank" style="text-decoration:none;">📷</a>' if tem_imagem else ""
+
+                    email_status = "📧 E-mail enviado" if email_enviado else ""
+                    imagem_download = f'<br>📸 <a href="{imagem_url}" target="_blank" style="color:white;text-decoration:underline;">Baixar</a>' if tem_imagem else ""
 
                     # Exibir imagem da ocorrência, se houver
-                    if ocorr.get("imagem_url"):
-                        st.image(ocorr["imagem_url"], caption="Imagem da Ocorrência", use_column_width=True)
+                    
                     
                     st.markdown(
                         f"""
                         <div style='background-color:{cor};padding:10px;border-radius:10px;color:white;
                         box-shadow: 0 4px 10px rgba(0,0,0,0.3);margin-bottom:5px;min-height:250px;font-size:15px;'>
+
                         <strong>Ticket #:</strong> {ocorr.get('numero_ticket', 'N/A')}<br>
                         <strong>Status:</strong> <span style='background-color:#2c3e50;padding:4px 8px;
-                        border-radius:1px;color:white;'>{status}</span> {email_status}<br>
+                        border-radius:1px;color:white;'>{status}</span> {email_status}{imagem_download}<br>
                         <strong>NF:</strong> {ocorr.get('nota_fiscal', '-')}<br>
                         <strong>Cliente:</strong> {ocorr.get('cliente', '-')}<br>
                         <strong>Destinatário:</strong> {ocorr.get('destinatario', '-')}<br>
@@ -1409,18 +1452,20 @@ with aba3:
                     cor = "gray"
 
                 with colunas[idx]:
-                    # Adicionar indicador de e-mail enviado
+    # Adicionar indicador de e-mail enviado
+                
                     email_abertura = "📧 E-mail abertura enviado" if ocorr.get('email_abertura_enviado', False) else ""
                     email_finalizacao = "📧 E-mail finalização enviado" if ocorr.get('email_finalizacao_enviado', False) else ""
-                    # Exibir imagem se houver
-                    if ocorr.get("imagem_url"):
-                        st.image(ocorr["imagem_url"], caption="Imagem da Ocorrência", use_column_width=True)
-                    
+
+                    imagem_url = ocorr.get("imagem_url", "")
+                    indicador_imagem = f'<br><a href="{imagem_url}" target="_blank" style="text-decoration:none;">📸 Baixar</a>' if imagem_url else ""
+
                     st.markdown(
                         f"""
                         <div style='background-color:{cor};padding:10px;border-radius:10px;color:white;
                         box-shadow: 0 4px 10px rgba(0,0,0,0.3);margin-bottom:5px;min-height:250px;font-size:15px;'>
-                        <strong>Ticket #:</strong> {ocorr.get('numero_ticket', 'N/A')}<br>
+
+                        <strong>Ticket #:</strong> {ocorr.get('numero_ticket', 'N/A')}{indicador_imagem}<br>
                         <strong>Status:</strong> <span style='background-color:#2c3e50;padding:4px 8px;
                         border-radius:1px;color:white;'>{status}</span><br>
                         {email_abertura}<br>{email_finalizacao}<br>
@@ -1443,6 +1488,7 @@ with aba3:
                         """,
                         unsafe_allow_html=True
                     )
+
 
 # =========================
 #     ABA 5 - TICKETS POR FOCAL
