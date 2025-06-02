@@ -780,6 +780,8 @@ def enviar_email(destinatario, copia, assunto, corpo, imagem_url=None):
                 todos_destinatarios += emails_cc
 
         msg['Subject'] = assunto
+        msg['Reply-To'] = "naoresponda@clicklog.com.br"  # ou outro email do tipo noreply
+
         msg.attach(MIMEText(corpo, 'html'))
 
         # 📎 Anexar imagem (se fornecida e válida)
@@ -914,6 +916,9 @@ def verificar_e_enviar_email_abertura(ocorrencia):
                 </table>
                 <p>Por favor, entre em contato conosco para mais informações.</p>
                 <p>Atenciosamente,<br>Equipe de Monitoramento ClikLog Transportes</p>
+                <p style="color:gray; font-size:12px;">
+                ⚠️ Este é um e-mail automático. Por favor, não responda.
+                </p>
             </body>
             </html>
             """
