@@ -541,26 +541,31 @@ with aba1:
 
             from datetime import datetime
 
-            if "data_abertura_manual" not in st.session_state:
+            # Inicializa somente se o campo ainda não tiver sido preenchido durante o uso do formulário
+            if "data_abertura_manual" not in st.session_state or not st.session_state.get("data_abertura_manual"):
                 st.session_state.data_abertura_manual = datetime.now().date()
-            if "hora_abertura_manual" not in st.session_state:
+            if "hora_abertura_manual" not in st.session_state or not st.session_state.get("hora_abertura_manual"):
                 st.session_state.hora_abertura_manual = datetime.now().time()
+
 
             col_data, col_hora = st.columns(2)
             with col_data:
-                st.session_state.data_abertura_manual = st.date_input(
+                data_abertura_manual = st.date_input(
                     "Data de Abertura",
-                    value=st.session_state.data_abertura_manual,
-                    format="DD/MM/YYYY"
+                    value=st.session_state.get("data_abertura_manual", datetime.now().date()),
+                    key="data_abertura_manual"
                 )
             with col_hora:
-                st.session_state.hora_abertura_manual = st.time_input(
+                hora_abertura_manual = st.time_input(
                     "Hora de Abertura",
-                    value=st.session_state.hora_abertura_manual
+                    value=st.session_state.get("hora_abertura_manual", datetime.now().time()),
+                    key="hora_abertura_manual"
                 )
 
-            data_abertura_manual = st.session_state.data_abertura_manual
-            hora_abertura_manual = st.session_state.hora_abertura_manual
+
+            data_abertura_manual_str = data_abertura_manual.strftime("%Y-%m-%d")
+            hora_abertura_manual_str = hora_abertura_manual.strftime("%H:%M:%S")
+
 
         enviar = st.form_submit_button("Adicionar Ocorrência")
 
