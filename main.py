@@ -542,10 +542,11 @@ with aba1:
             from datetime import datetime
 
             # Inicializa somente se o campo ainda não tiver sido preenchido durante o uso do formulário
-            if "data_abertura_manual" not in st.session_state or not st.session_state.get("data_abertura_manual"):
-                st.session_state.data_abertura_manual = datetime.now().date()
-            if "hora_abertura_manual" not in st.session_state or not st.session_state.get("hora_abertura_manual"):
-                st.session_state.hora_abertura_manual = datetime.now().time()
+            if "data_abertura_manual" not in st.session_state:
+                st.session_state.data_abertura_manual = obter_data_hora_atual_brasil().date()
+            if "hora_abertura_manual" not in st.session_state:
+                st.session_state.hora_abertura_manual = obter_data_hora_atual_brasil().time()
+
 
 
             col_data, col_hora = st.columns(2)
