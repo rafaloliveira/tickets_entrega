@@ -1154,7 +1154,8 @@ def obter_focais_com_contagem():
         return []
 
 # Função para finalizar ocorrência com suporte a imagem na finalização
-def finalizar_ocorrencia(ocorr, complemento, data_finalizacao_manual, hora_finalizacao_manual, imagem_url_finalizacao=""):
+def finalizar_ocorrencia(ocorr, complemento, data_finalizacao_manual, hora_finalizacao_manual, imagem_url_finalizacao="", observacao_final=""):
+
     try:
         data_abertura_manual = ocorr.get("data_abertura_manual")
         hora_abertura_manual = ocorr.get("hora_abertura_manual")
