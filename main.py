@@ -1143,10 +1143,16 @@ def finalizar_ocorrencia(ocorr, complemento, data_finalizacao_manual, hora_final
         try:
             # Converter string para datetime com fuso horário do Brasil
             try:
+                # hora_finalizacao_manual já é um objeto time
+                hora_str = hora_finalizacao_manual.strftime("%H:%M")
                 data_hora_finalizacao = datetime.strptime(
-                    f"{data_finalizacao_manual} {hora_finalizacao_manual}", "%d-%m-%Y %H:%M"
+                    f"{data_finalizacao_manual} {hora_str}", "%d-%m-%Y %H:%M"
                 )
                 data_hora_finalizacao = FUSO_HORARIO_BRASIL.localize(data_hora_finalizacao)
+
+
+
+
             except ValueError:
                 return False, "Formato inválido para data/hora de finalização. Use DD-MM-AAAA para a data e HH:MM para a hora."
             
