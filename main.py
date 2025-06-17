@@ -643,13 +643,18 @@ with aba1:
                     time.sleep(2)
                     sucesso.empty()
 
-                    # 🧹 Limpa valores de data/hora para nova sugestão futura
-                    del st.session_state.data_abertura_manual
-                    del st.session_state.hora_abertura_manual
+                    # 🧹 Limpa todos os campos após sucesso
+                    campos_para_limpar = [
+                        "nf", "destinatario", "cliente_opcao", "cliente_manual",
+                        "cidade_opcao", "cidade_manual", "motorista_opcao", "motorista_manual",
+                        "tipo_ocorrencia", "observacoes", "imagem_ocorrencia",
+                        "data_abertura_manual", "hora_abertura_manual"
+                    ]
+                    for campo in campos_para_limpar:
+                        if campo in st.session_state:
+                            del st.session_state[campo]
 
-                else:
-                    st.error(f"Erro ao salvar ocorrência no Supabase: {response.error if response else 'Erro desconhecido'}")
-
+                    st.rerun()  # opcional: recarrega a página com campos limpos
 
 # =========================
 #    FUNÇÃO CLASSIFICAÇÃO
