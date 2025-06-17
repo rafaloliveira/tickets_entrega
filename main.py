@@ -1697,8 +1697,14 @@ with aba5:
                                             if sucesso:
                                                 st.success("✅ Ticket finalizado com sucesso!")
                                                 st.session_state.ticket_em_finalizacao = None
+
+                                                # ⚠️ limpa a lista local para forçar novo carregamento na rerun
+                                                if "ocorrencias_focal" in st.session_state:
+                                                    del st.session_state["ocorrencias_focal"]
+
                                                 time.sleep(1.5)
                                                 st.rerun()
+
                                             else:
                                                 st.warning(f"⚠️ A finalização falhou: {mensagem}")
                             else:
