@@ -1651,8 +1651,11 @@ with aba5:
                             if st.session_state.get("ticket_em_finalizacao") == safe_idx:
                                 with st.form(f"form_{safe_idx}"):
                                     data_finalizacao_manual = st.text_input("Data Finalização (DD-MM-AAAA)", value=obter_data_hora_atual_brasil().strftime("%d-%m-%Y"), key=f"data_final_{safe_idx}")
-                                    hora_finalizacao_manual = st.text_input("Hora Finalização (HH:MM)", value=obter_data_hora_atual_brasil().strftime("%H:%M"), key=f"hora_final_{safe_idx}")
-
+                                    hora_finalizacao_manual = st.time_input(
+                                    "Hora Finalização",
+                                    value=st.session_state[f"{form_prefix}_hora"],
+                                    key=f"hora_final_{safe_idx}"
+                                    )
                                     complemento_key = f"complemento_final_{safe_idx}"
                                     complemento = st.text_area("Complementar não Fiscal", key=complemento_key, placeholder="Descreva aqui o complemento da ocorrência...")
 
