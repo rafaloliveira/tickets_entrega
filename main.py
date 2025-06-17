@@ -516,38 +516,22 @@ with aba1:
             cidade_opcao = st.selectbox("Cidade", options=cidades + ["Outro (digitar manualmente)"], index=None, key="cidade_opcao")
             cidade = st.text_input("Digite o nome da cidade", key="cidade_manual") if cidade_opcao == "Outro (digitar manualmente)" else cidade_opcao
 
-            # 📎 Campo opcional para importar imagem
-            imagem = st.file_uploader(
-                "📎 Anexar imagem (opcional)", 
-                type=["png", "jpg", "jpeg"],
-                key="imagem_ocorrencia"
-            )
+            imagem = st.file_uploader("📎 Anexar imagem (opcional)", type=["png", "jpg", "jpeg"], key="imagem_ocorrencia")
 
 
         with col2:
-    # Depuração: carregar todos os motoristas do banco e exibir a lista completa
             motoristas_brutos = supabase.table("motoristas").select("motorista").limit(40000).execute()
 
             if motoristas_brutos.data:
-                # Extrai os nomes, remove nulos e espaços extras
                 motoristas = [item["motorista"].strip() for item in motoristas_brutos.data if item.get("motorista")]
-                motoristas = sorted(set(motoristas))  # remove duplicatas e ordena
-
-                # Exibir para depuração (remova se não quiser mostrar)
+                motoristas = sorted(set(motoristas))
                 motoristas = carregar_motoristas_supabase()
-                #st.write("🔍 Total de motoristas encontrados:", len(motoristas))
-                #st.write("📋 Lista de motoristas:", motoristas)
             else:
-                motoristas = []  # garante que a variável exista mesmo em caso de erro
+                motoristas = []
                 st.warning("⚠️ Nenhum motorista encontrado no banco.")
 
-            # Criar lista final de opções
             opcoes_motoristas = motoristas + ["Outro (digitar manualmente)"]
-
-            # Exibir selectbox com chave única
             motorista_opcao = st.selectbox("Motorista", options=opcoes_motoristas, index=None, key="motorista_opcao")
-
-            # Campo extra se escolher "Outro"
             motorista = st.text_input("Digite o nome do motorista", key="motorista_manual") if motorista_opcao == "Outro (digitar manualmente)" else motorista_opcao
 
             tipo = st.multiselect("Tipo de Ocorrência", options=["Chegada no Local", "Pedido Bloqueado", "Aguardando Descarga", "Divergência"], key="tipo_ocorrencia")
@@ -555,36 +539,31 @@ with aba1:
             responsavel = st.session_state.username
             st.text_input("Quem está abrindo o ticket", value=responsavel, disabled=True)
 
-            #### data e hora de abertura inserido manual #####
-            st.markdown("")
-
-            data_hora_chave = "nova_ocorrencia_data_hora_padrao"
-
-# Define apenas na primeira vez
             from datetime import datetime
+
+            if "data_abertura_manual" not in st.session_state:
+                st.session_state.data_abertura_manual = datetime.now().date()
+            if "hora_abertura_manual" not in st.session_state:
+                st.session_state.hora_abertura_manual = datetime.now().time()
 
             col_data, col_hora = st.columns(2)
             with col_data:
-                data_abertura_manual = st.date_input(
-                    "Data de Abertura", 
-                    value=datetime.now().date(),  # sugestão inicial
+                st.session_state.data_abertura_manual = st.date_input(
+                    "Data de Abertura",
+                    value=st.session_state.data_abertura_manual,
                     format="DD/MM/YYYY"
                 )
             with col_hora:
-                hora_abertura_manual = st.time_input(
-                    "Hora de Abertura", 
-                    value=datetime.now().time()  # sugestão inicial
+                st.session_state.hora_abertura_manual = st.time_input(
+                    "Hora de Abertura",
+                    value=st.session_state.hora_abertura_manual
                 )
 
-
-
-
-
+            data_abertura_manual = st.session_state.data_abertura_manual
+            hora_abertura_manual = st.session_state.hora_abertura_manual
 
         enviar = st.form_submit_button("Adicionar Ocorrência")
 
-
-        # Validações
         if enviar:
             campos_obrigatorios = {
                 "Nota Fiscal": nf,
@@ -603,21 +582,18 @@ with aba1:
                 st.error("Ocorrência não adicionada: Nota Fiscal deve conter apenas números.")
             elif faltando:
                 st.error(f"❌ Preencha todos os campos obrigatórios: {', '.join(faltando)}")
-            elif not cliente:  # Verificação adicional para o campo "Cliente"
+            elif not cliente:
                 st.error("❌ O campo 'Cliente' é obrigatório.")
-        
             else:
-                # Gera número de ticket único baseado em data/hora
-                numero_ticket = obter_data_hora_atual_brasil().strftime("%Y%m%d%H%M%S%f")  # Ex: 20250513151230543210
-
-                # Formatar data e hora manual para string no formato esperado pelo banco
+                numero_ticket = obter_data_hora_atual_brasil().strftime("%Y%m%d%H%M%S%f")
                 data_abertura_manual_str = data_abertura_manual.strftime("%Y-%m-%d")
                 hora_abertura_manual_str = hora_abertura_manual.strftime("%H:%M:%S")
 
-                # Montagem do DICIONÁRIO de nova ocorrência
+                st.write("🧪 Será salvo:", data_abertura_manual_str, hora_abertura_manual_str)  # depuração
+
                 nova_ocorrencia = {
                     "id": str(uuid.uuid4()),
-                    "numero_ticket": numero_ticket, #numero ticket
+                    "numero_ticket": numero_ticket,
                     "nota_fiscal": nf,
                     "cliente": cliente,
                     "focal": st.session_state["focal_responsavel"],
@@ -627,39 +603,29 @@ with aba1:
                     "tipo_de_ocorrencia": ", ".join(tipo),
                     "observacoes": obs,
                     "responsavel": responsavel,
-                    "data_abertura_manual": data_abertura_manual_str, # data abertura inserido manual
-                    "hora_abertura_manual": hora_abertura_manual_str, # hora abertura inserido manual
+                    "data_abertura_manual": data_abertura_manual_str,
+                    "hora_abertura_manual": hora_abertura_manual_str,
                     "complementar": "",
                     "permanencia": "",
                     "imagem_url": "",
                 }
 
-                    # Se imagem foi enviada, salvar no Supabase Storage
                 if imagem:
                     try:
                         nome_arquivo = f"{nova_ocorrencia['id']}_{imagem.name}"
-
-                        # ✅ Corrigido: enviar os bytes com .read()
                         supabase.storage.from_("imagem-ticket").upload(
                             nome_arquivo,
-                            imagem.read(),  # <- conteúdo binário
+                            imagem.read(),
                             file_options={"content-type": imagem.type}
                         )
-
-                        # Gera URL pública
-                        # gerar URL (corrigir aqui)
                         url_imagem = supabase.storage.from_("imagem-ticket").get_public_url(nome_arquivo)
                         nova_ocorrencia["imagem_url"] = url_imagem
-
                     except Exception as e:
                         st.warning(f"⚠️ Falha ao enviar imagem: {e}")
 
-                # Inserção no banco de dados
                 response = inserir_ocorrencia_supabase(nova_ocorrencia)
-                
-                
+
                 if response and response.data:
-                    # Adiciona localmente para exibição imediata
                     nova_ocorrencia_local = nova_ocorrencia.copy()
                     nova_ocorrencia_local["Data/Hora Finalização"] = ""
                     st.session_state.ocorrencias_abertas.append(nova_ocorrencia_local)
@@ -668,15 +634,16 @@ with aba1:
 
                     sucesso = st.empty()
                     sucesso.success("✅ Ocorrência aberta com sucesso!")
-                    del st.session_state[data_hora_chave]
-                    #st.write("✅ Imagem URL salva:", nova_ocorrencia["imagem_url"])
                     time.sleep(2)
                     sucesso.empty()
-                    
-                    # Verificar se precisa enviar e-mail (mais de 30 minutos)
-                    #verificar_e_enviar_email_abertura(nova_ocorrencia)
+
+                    # 🧹 Limpa valores de data/hora para nova sugestão futura
+                    del st.session_state.data_abertura_manual
+                    del st.session_state.hora_abertura_manual
+
                 else:
                     st.error(f"Erro ao salvar ocorrência no Supabase: {response.error if response else 'Erro desconhecido'}")
+
 
 # =========================
 #    FUNÇÃO CLASSIFICAÇÃO
