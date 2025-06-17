@@ -494,7 +494,7 @@ with aba1:
         st.session_state["focal_responsavel"] = ""
 
     # Formulário para nova ocorrência
-    with st.form("form_nova_ocorrencia", clear_on_submit=True):
+    with st.form("form_nova_ocorrencia", clear_on_submit=False):
         col1, col2 = st.columns(2)
 
         with col1:
