@@ -561,25 +561,21 @@ with aba1:
             data_hora_chave = "nova_ocorrencia_data_hora_padrao"
 
 # Define apenas na primeira vez
-            if data_hora_chave not in st.session_state:
-                data_brasil = obter_data_hora_atual_brasil()
-                st.session_state[data_hora_chave] = {
-                    "data": data_brasil.date(),
-                    "hora": data_brasil.time()
-                }
+            from datetime import datetime
 
             col_data, col_hora = st.columns(2)
             with col_data:
                 data_abertura_manual = st.date_input(
                     "Data de Abertura", 
-                    value=st.session_state[data_hora_chave]["data"], 
+                    value=datetime.now().date(),  # sugestão inicial
                     format="DD/MM/YYYY"
                 )
             with col_hora:
                 hora_abertura_manual = st.time_input(
                     "Hora de Abertura", 
-                    value=st.session_state[data_hora_chave]["hora"]
+                    value=datetime.now().time()  # sugestão inicial
                 )
+
 
 
 
