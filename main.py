@@ -534,7 +534,7 @@ with aba1:
             motorista_opcao = st.selectbox("Motorista", options=opcoes_motoristas, index=None, key="motorista_opcao")
             motorista = st.text_input("Digite o nome do motorista", key="motorista_manual") if motorista_opcao == "Outro (digitar manualmente)" else motorista_opcao
 
-            tipo = st.multiselect("Tipo de Ocorrência", options=["Chegada no Local", "Pedido Bloqueado", "Aguardando Descarga", "Divergência"], key="tipo_ocorrencia")
+            tipo = st.selectbox("Tipo de Ocorrência", options=["Chegada no Local", "Pedido Bloqueado", "Aguardando Descarga", "Divergência"], key="tipo_ocorrencia")
             obs = st.text_area("Observações", key="observacoes")
             responsavel = st.session_state.username
             st.text_input("Quem está abrindo o ticket", value=responsavel, disabled=True)
@@ -1300,11 +1300,11 @@ with aba2:
                             key=f"data_final_{safe_idx}"
                         )
 
-                        hora_finalizacao_manual = st.text_input(
-                            "Hora Finalização (HH:MM)",
-                            value=st.session_state[f"{form_prefix}_hora"],
-                            key=f"hora_final_{safe_idx}"
-                        )
+                        hora_finalizacao_manual = st.time_input(
+                        "Hora Finalização",
+                        value=st.session_state[f"{form_prefix}_hora"],
+                        key=f"hora_final_{safe_idx}"
+                    )
 
 
                         complemento_key = f"complemento_final_{safe_idx}"
