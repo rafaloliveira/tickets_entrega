@@ -1462,6 +1462,17 @@ def carregar_ocorrencias_finalizadas():
 def seguro(valor, padrao="-"):
     return html.escape(str(valor if valor is not None else padrao))
 
+def auto_sanitizar_ocorrencia(ocorr):
+    campos_texto = [
+        'numero_ticket', 'nota_fiscal', 'cliente', 'destinatario', 'focal', 'cidade',
+        'motorista', 'tipo_de_ocorrencia', 'responsavel', 'finalizado_por',
+        'permanencia_manual', 'complementar', 'Status', 'Cor'
+    ]
+    for campo in campos_texto:
+        if campo not in ocorr or ocorr[campo] is None:
+            ocorr[campo] = "-"
+    return ocorr
+
 if st.session_state.aba_ativa == "aba3":
     col_titulo, col_botao = st.columns([6, 1])
     with col_titulo:
@@ -1477,12 +1488,12 @@ if st.session_state.aba_ativa == "aba3":
             st.error(f"Erro ao carregar ocorrências finalizadas: {e}")
             st.stop()
 
+
     ocorrencias_finalizadas = st.session_state.get("ocorrencias_finalizadas", [])
 
     if not ocorrencias_finalizadas:
         st.info("ℹ️ Nenhuma ocorrência finalizada.")
     else:
-        # --- Filtros e exportação ---
         col1, col2 = st.columns([1, 2])
         with col1:
             filtro_nf = st.text_input("🔎 Pesquisar por NF:", "", max_chars=10)
@@ -1502,9 +1513,6 @@ if st.session_state.aba_ativa == "aba3":
                 except Exception as e:
                     st.error(f"Erro ao exportar para Excel: {e}")
 
-
-
-        # --- Filtrar ---
         if filtro_nf:
             ocorrencias_filtradas = [
                 ocorr for ocorr in ocorrencias_finalizadas
@@ -1513,109 +1521,113 @@ if st.session_state.aba_ativa == "aba3":
         else:
             ocorrencias_filtradas = ocorrencias_finalizadas
 
+        erros_detectados = []
         num_colunas = 4
         for i in range(0, len(ocorrencias_filtradas), num_colunas):
             linha = ocorrencias_filtradas[i:i+num_colunas]
             colunas = st.columns(num_colunas)
 
             for idx, ocorr in enumerate(linha):
+                ocorr = auto_sanitizar_ocorrencia(ocorr)
                 try:
-                    # --- Datas manuais ---
-                    data_abertura_manual = "-"
-                    hora_abertura_manual = "-"
+                    data_abertura_manual = hora_abertura_manual = "-"
                     if ocorr.get("data_abertura_manual") and ocorr.get("hora_abertura_manual"):
                         try:
-                            # Criar datetime a partir das strings de data e hora manual
                             abertura_dt = criar_datetime_manual(
-                                ocorr["data_abertura_manual"], 
-                                ocorr["hora_abertura_manual"]
+                                ocorr["data_abertura_manual"], ocorr["hora_abertura_manual"]
                             )
                             if abertura_dt:
                                 data_abertura_manual = abertura_dt.strftime("%d-%m-%Y")
                                 hora_abertura_manual = abertura_dt.strftime("%H:%M:%S")
-                        except:
-                            pass
+                        except Exception as e:
+                            st.warning(f"Erro ao converter data/hora de abertura: {e}")
+                except Exception as e:
+                    st.warning(f"Erro ao processar os dados de abertura: {e}")
 
-                    data_finalizacao_manual = "-"
-                    hora_finalizacao_manual = "-"
+                    data_finalizacao_manual = hora_finalizacao_manual = "-"
                     if ocorr.get("data_finalizacao_manual") and ocorr.get("hora_finalizacao_manual"):
                         try:
-                            # Criar datetime a partir das strings de data e hora manual
                             finalizacao_dt = criar_datetime_manual(
-                                ocorr["data_finalizacao_manual"], 
-                                ocorr["hora_finalizacao_manual"]
+                                ocorr["data_finalizacao_manual"], ocorr["hora_finalizacao_manual"]
                             )
                             if finalizacao_dt:
                                 data_finalizacao_manual = finalizacao_dt.strftime("%d-%m-%Y")
                                 hora_finalizacao_manual = finalizacao_dt.strftime("%H:%M:%S")
-                        except:
-                            pass
+                        except Exception as e:
+                            st.warning(f"Erro ao converter data/hora de finalização: {e}")
 
-                    status = ocorr.get("Status", "Finalizada")
-                    cor = ocorr.get("Cor", "#34495e")
+                    with colunas[idx]:
+                        try:
+                            email_abertura = "📧 E-mail abertura enviado" if ocorr.get('email_abertura_enviado', False) else ""
+                            email_finalizacao = "📧 E-mail finalização enviado" if ocorr.get('email_finalizacao_enviado', False) else ""
 
-                except Exception as e:
-                    st.error(f"Erro ao processar ocorrência (NF {ocorr.get('nota_fiscal', '-')}) — {e}")
-                    data_abertura_manual = hora_abertura_manual = "-"
-                    data_finalizacao_manual = hora_finalizacao_manual = "-"
-                    status = "Erro"
-                    cor = "gray"
+                            imagem_abertura_url = html.escape(str(ocorr.get("imagem_url", "")), quote=True)
+                            imagem_finalizacao_url = html.escape(str(ocorr.get("imagem_finalizacao_url", "")), quote=True)
 
-                with colunas[idx]:
-                    try:
-                        email_abertura = "📧 E-mail abertura enviado" if ocorr.get('email_abertura_enviado', False) else ""
-                        email_finalizacao = "📧 E-mail finalização enviado" if ocorr.get('email_finalizacao_enviado', False) else ""
-
-                        imagem_abertura_url = html.escape(str(ocorr.get("imagem_url", "")), quote=True)
-                        imagem_finalizacao_url = html.escape(str(ocorr.get("imagem_finalizacao_url", "")), quote=True)
-
-                        cor = ocorr.get("Cor", "#34495e")
-                        status = seguro(ocorr.get("Status", "Finalizada"))
-                        numero_ticket = seguro(ocorr.get('numero_ticket', 'N/A'))
-
-                        html_card = f"""
-                        <div style='background-color:{cor};padding:10px;border-radius:10px;color:white;
-                        box-shadow: 0 4px 10px rgba(0,0,0,0.3);margin-bottom:5px;min-height:250px;font-size:15px;'>
-
-                        <strong>Ticket #:</strong> {numero_ticket}<br>
-                        {'📸 Abertura: <a href="' + imagem_abertura_url + '" target="_blank" style="text-decoration:underline;color:white;">Baixar</a><br>' if imagem_abertura_url else ''}
-                        {'📸 Finalização: <a href="' + imagem_finalizacao_url + '" target="_blank" style="text-decoration:underline;color:white;">Baixar</a><br>' if imagem_finalizacao_url else ''}
-                        <strong>Status:</strong> {status}<br>
-                        {email_abertura}<br>
-                        {email_finalizacao}<br>
-                        <strong>NF:</strong> {seguro(ocorr.get('nota_fiscal'))}<br>
-                        <strong>Cliente:</strong> {seguro(ocorr.get('cliente'))}<br>
-                        <strong>Destinatário:</strong> {seguro(ocorr.get('destinatario'))}<br>
-                        <strong>Focal:</strong> {seguro(ocorr.get('focal'))}<br>
-                        <strong>Cidade:</strong> {seguro(ocorr.get('cidade'))}<br>
-                        <strong>Motorista:</strong> {seguro(ocorr.get('motorista'))}<br>
-                        <strong>Tipo:</strong> {seguro(ocorr.get('tipo_de_ocorrencia'))}<br>
-                        <strong>Aberto por:</strong> {seguro(ocorr.get('responsavel'))}<br>
-                        <strong>Finalizado por:</strong> {seguro(ocorr.get('finalizado_por'))}<br>
-                        <strong>Data Abertura:</strong> {data_abertura_manual}<br>
-                        <strong>Hora Abertura:</strong> {hora_abertura_manual}<br>
-                        <strong>Data Finalização:</strong> {data_finalizacao_manual}<br>
-                        <strong>Hora Finalização:</strong> {hora_finalizacao_manual}<br>
-                        <strong>Permanência:</strong> {seguro(ocorr.get('permanencia_manual'))}<br>
-                        <strong>Complementar:</strong> {seguro(ocorr.get('complementar'), '')}<br>
-                        </div>
-                        """
-                        st.markdown(html_card, unsafe_allow_html=True)
-
-                    except Exception as e:
-                        st.warning(f"⚠️ Erro ao montar card de ocorrência: {e}")
-                        st.markdown(
-                            f"""
-                            <div style='background-color:#7f8c8d;padding:10px;border-radius:10px;color:white;
+                            html_card = f"""
+                            <div style='background-color:{ocorr['Cor']};padding:10px;border-radius:10px;color:white;
                             box-shadow: 0 4px 10px rgba(0,0,0,0.3);margin-bottom:5px;min-height:250px;font-size:15px;'>
-                            <strong>⚠️ Erro ao exibir ocorrência</strong><br>
-                            NF: {seguro(ocorr.get('nota_fiscal'))}<br>
-                            Motivo: {html.escape(str(e))}
+                            <strong>Ticket #:</strong> {seguro(ocorr['numero_ticket'])}<br>
+                            {'📸 Abertura: <a href="' + imagem_abertura_url + '" target="_blank" style="text-decoration:underline;color:white;">Baixar</a><br>' if imagem_abertura_url else ''}
+                            {'📸 Finalização: <a href="' + imagem_finalizacao_url + '" target="_blank" style="text-decoration:underline;color:white;">Baixar</a><br>' if imagem_finalizacao_url else ''}
+                            <strong>Status:</strong> {seguro(ocorr['Status'])}<br>
+                            {email_abertura}<br>
+                            {email_finalizacao}<br>
+                            <strong>NF:</strong> {seguro(ocorr['nota_fiscal'])}<br>
+                            <strong>Cliente:</strong> {seguro(ocorr['cliente'])}<br>
+                            <strong>Destinatário:</strong> {seguro(ocorr['destinatario'])}<br>
+                            <strong>Focal:</strong> {seguro(ocorr['focal'])}<br>
+                            <strong>Cidade:</strong> {seguro(ocorr['cidade'])}<br>
+                            <strong>Motorista:</strong> {seguro(ocorr['motorista'])}<br>
+                            <strong>Tipo:</strong> {seguro(ocorr['tipo_de_ocorrencia'])}<br>
+                            <strong>Aberto por:</strong> {seguro(ocorr['responsavel'])}<br>
+                            <strong>Finalizado por:</strong> {seguro(ocorr['finalizado_por'])}<br>
+                            <strong>Data Abertura:</strong> {data_abertura_manual}<br>
+                            <strong>Hora Abertura:</strong> {hora_abertura_manual}<br>
+                            <strong>Data Finalização:</strong> {data_finalizacao_manual}<br>
+                            <strong>Hora Finalização:</strong> {hora_finalizacao_manual}<br>
+                            <strong>Permanência:</strong> {seguro(ocorr['permanencia_manual'])}<br>
+                            <strong>Complementar:</strong> {seguro(ocorr['complementar'], '')}<br>
                             </div>
-                            """,
-                            unsafe_allow_html=True
-                        )
-                        continue
+                            """
+                            st.markdown(html_card, unsafe_allow_html=True)
+
+                        except Exception as e:
+                            st.warning(f"⚠️ Erro ao montar card de ocorrência: Ticket {ocorr.get('numero_ticket')} — {e}")
+                            with st.expander(f"🔍 Ver dados da ocorrência com erro (Ticket {ocorr.get('numero_ticket')})"):
+                                st.json(ocorr)
+                            erros_detectados.append({
+                                "ticket": ocorr.get("numero_ticket"),
+                                "nf": ocorr.get("nota_fiscal"),
+                                "erro": str(e),
+                                "dados": ocorr
+                            })
+                            st.markdown(
+                                f"""
+                                <div style='background-color:#7f8c8d;padding:10px;border-radius:10px;color:white;
+                                box-shadow: 0 4px 10px rgba(0,0,0,0.3);margin-bottom:5px;min-height:250px;font-size:15px;'>
+                                <strong>⚠️ Erro ao exibir ocorrência</strong><br>
+                                NF: {seguro(ocorr.get('nota_fiscal'))}<br>
+                                Motivo: {html.escape(str(e))}
+                                </div>
+                                """,
+                                unsafe_allow_html=True
+                            )
+                            continue
+
+        if erros_detectados:
+            st.subheader("⚠️ Ocorrências com erro")
+            st.info(f"Foram detectadas {len(erros_detectados)} ocorrências com falha na renderização.")
+            df_erros = pd.DataFrame(erros_detectados)
+            output_erros = BytesIO()
+            with pd.ExcelWriter(output_erros, engine='xlsxwriter') as writer:
+                df_erros.to_excel(writer, index=False, sheet_name='Ocorrências com Erro')
+            st.download_button(
+                label="⬇️ Baixar lista de ocorrências com erro",
+                data=output_erros.getvalue(),
+                file_name="erros_ocorrencias_finalizadas.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
 
 
