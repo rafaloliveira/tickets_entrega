@@ -1459,6 +1459,8 @@ def carregar_ocorrencias_finalizadas():
 # =============================== 
 #    ABA3 FINALIZADAS 
 # ===============================   
+def seguro(valor, padrao="-"):
+    return html.escape(str(valor if valor is not None else padrao))
 
 if st.session_state.aba_ativa == "aba3":
     col_titulo, col_botao = st.columns([6, 1])
@@ -1564,13 +1566,12 @@ if st.session_state.aba_ativa == "aba3":
                         email_abertura = "📧 E-mail abertura enviado" if ocorr.get('email_abertura_enviado', False) else ""
                         email_finalizacao = "📧 E-mail finalização enviado" if ocorr.get('email_finalizacao_enviado', False) else ""
 
-                        imagem_abertura_url = html.escape(ocorr.get("imagem_url", ""), quote=True)
-                        imagem_finalizacao_url = html.escape(ocorr.get("imagem_finalizacao_url", ""), quote=True)
-
+                        imagem_abertura_url = html.escape(str(ocorr.get("imagem_url", "")), quote=True)
+                        imagem_finalizacao_url = html.escape(str(ocorr.get("imagem_finalizacao_url", "")), quote=True)
 
                         cor = ocorr.get("Cor", "#34495e")
-                        status = html.escape(ocorr.get("Status", "Finalizada"))  # ESCAPADO
-                        numero_ticket = html.escape(str(ocorr.get('numero_ticket', 'N/A')))
+                        status = seguro(ocorr.get("Status", "Finalizada"))
+                        numero_ticket = seguro(ocorr.get('numero_ticket', 'N/A'))
 
                         html_card = f"""
                         <div style='background-color:{cor};padding:10px;border-radius:10px;color:white;
@@ -1582,23 +1583,25 @@ if st.session_state.aba_ativa == "aba3":
                         <strong>Status:</strong> {status}<br>
                         {email_abertura}<br>
                         {email_finalizacao}<br>
-                        <strong>NF:</strong> {html.escape(str(ocorr.get('nota_fiscal', '-')))}<br>
-                        <strong>Cliente:</strong> {html.escape(str(ocorr.get('cliente', '-')))}<br>
-                        <strong>Destinatário:</strong> {html.escape(str(ocorr.get('destinatario', '-')))}<br>
-                        <strong>Focal:</strong> {html.escape(str(ocorr.get('focal', '-')))}<br>
-                        <strong>Cidade:</strong> {html.escape(str(ocorr.get('cidade', '-')))}<br>
-                        <strong>Motorista:</strong> {html.escape(str(ocorr.get('motorista', '-')))}<br>
-                        <strong>Tipo:</strong> {html.escape(str(ocorr.get('tipo_de_ocorrencia', '-')))}<br>
-                        <strong>Aberto por:</strong> {html.escape(str(ocorr.get('responsavel', '-')))}<br>
-                        <strong>Finalizado por:</strong> {html.escape(str(ocorr.get('finalizado_por', '-')))}<br>
+                        <strong>NF:</strong> {seguro(ocorr.get('nota_fiscal'))}<br>
+                        <strong>Cliente:</strong> {seguro(ocorr.get('cliente'))}<br>
+                        <strong>Destinatário:</strong> {seguro(ocorr.get('destinatario'))}<br>
+                        <strong>Focal:</strong> {seguro(ocorr.get('focal'))}<br>
+                        <strong>Cidade:</strong> {seguro(ocorr.get('cidade'))}<br>
+                        <strong>Motorista:</strong> {seguro(ocorr.get('motorista'))}<br>
+                        <strong>Tipo:</strong> {seguro(ocorr.get('tipo_de_ocorrencia'))}<br>
+                        <strong>Aberto por:</strong> {seguro(ocorr.get('responsavel'))}<br>
+                        <strong>Finalizado por:</strong> {seguro(ocorr.get('finalizado_por'))}<br>
                         <strong>Data Abertura:</strong> {data_abertura_manual}<br>
                         <strong>Hora Abertura:</strong> {hora_abertura_manual}<br>
                         <strong>Data Finalização:</strong> {data_finalizacao_manual}<br>
                         <strong>Hora Finalização:</strong> {hora_finalizacao_manual}<br>
-                        <strong>Permanência:</strong> {html.escape(str(ocorr.get('permanencia_manual', '-')))}<br>
-                        <strong>Complementar:</strong> {html.escape(str(ocorr.get('complementar', '')))}<br>
+                        <strong>Permanência:</strong> {seguro(ocorr.get('permanencia_manual'))}<br>
+                        <strong>Complementar:</strong> {seguro(ocorr.get('complementar'), '')}<br>
                         </div>
                         """
+                        st.markdown(html_card, unsafe_allow_html=True)
+
                     except Exception as e:
                         st.warning(f"⚠️ Erro ao montar card de ocorrência: {e}")
                         st.markdown(
@@ -1606,14 +1609,13 @@ if st.session_state.aba_ativa == "aba3":
                             <div style='background-color:#7f8c8d;padding:10px;border-radius:10px;color:white;
                             box-shadow: 0 4px 10px rgba(0,0,0,0.3);margin-bottom:5px;min-height:250px;font-size:15px;'>
                             <strong>⚠️ Erro ao exibir ocorrência</strong><br>
-                            NF: {html.escape(str(ocorr.get('nota_fiscal', '-')))}<br>
+                            NF: {seguro(ocorr.get('nota_fiscal'))}<br>
                             Motivo: {html.escape(str(e))}
                             </div>
                             """,
                             unsafe_allow_html=True
                         )
                         continue
-
 
 
 
