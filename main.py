@@ -1562,7 +1562,8 @@ if st.session_state.aba_ativa == "aba3":
                         imagem_abertura_url = html.escape(str(ocorr.get("imagem_url", "")), quote=True)
                         imagem_finalizacao_url = html.escape(str(ocorr.get("imagem_finalizacao_url", "")), quote=True)
 
-                        html_card = f"""<div style='background-color:{ocorr['Cor']};padding:10px;border-radius:10px;color:white;
+                        html_card = f"""
+                        <div style='background-color:{seguro(ocorr['Cor'])};padding:10px;border-radius:10px;color:white;
                         box-shadow: 0 4px 10px rgba(0,0,0,0.3);margin-bottom:5px;min-height:250px;font-size:15px;'>
                         <strong>Ticket #:</strong> {seguro(ocorr['numero_ticket'])}<br>
                         {'📸 Abertura: <a href="' + imagem_abertura_url + '" target="_blank" style="text-decoration:underline;color:white;">Baixar</a><br>' if imagem_abertura_url else ''}
@@ -1585,7 +1586,8 @@ if st.session_state.aba_ativa == "aba3":
                         <strong>Hora Finalização:</strong> {hora_finalizacao_manual}<br>
                         <strong>Permanência:</strong> {seguro(ocorr['permanencia_manual'])}<br>
                         <strong>Complementar:</strong> {seguro(ocorr['complementar'], '')}<br>
-                        </div>"""
+                        </div>
+                        """
                         st.markdown(html_card, unsafe_allow_html=True)
 
                     except Exception as e:
@@ -1598,32 +1600,7 @@ if st.session_state.aba_ativa == "aba3":
                             "erro": str(e),
                             "dados": ocorr
                         })
-                        st.markdown(
-                            f"""
-                            <div style='background-color:#7f8c8d;padding:10px;border-radius:10px;color:white;
-                            box-shadow: 0 4px 10px rgba(0,0,0,0.3);margin-bottom:5px;min-height:250px;font-size:15px;'>
-                            <strong>⚠️ Erro ao exibir ocorrência</strong><br>
-                            NF: {seguro(ocorr.get('nota_fiscal'))}<br>
-                            Motivo: {html.escape(str(e))}
-                            </div>
-                            """,
-                            unsafe_allow_html=True
-                        )
 
-
-                    if erros_detectados:
-                        st.subheader("⚠️ Ocorrências com erro")
-                        st.info(f"Foram detectadas {len(erros_detectados)} ocorrências com falha na renderização.")
-                        df_erros = pd.DataFrame(erros_detectados)
-                        output_erros = BytesIO()
-                        with pd.ExcelWriter(output_erros, engine='xlsxwriter') as writer:
-                            df_erros.to_excel(writer, index=False, sheet_name='Ocorrências com Erro')
-                        st.download_button(
-                            label="⬇️ Baixar lista de ocorrências com erro",
-                            data=output_erros.getvalue(),
-                            file_name="erros_ocorrencias_finalizadas.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        )
 
 
 
