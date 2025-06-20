@@ -1561,44 +1561,44 @@ if st.session_state.aba_ativa == "aba3":
 
                 with colunas[idx]:
                     try:
-                        # --- Dados da ocorrência ---
                         email_abertura = "📧 E-mail abertura enviado" if ocorr.get('email_abertura_enviado', False) else ""
                         email_finalizacao = "📧 E-mail finalização enviado" if ocorr.get('email_finalizacao_enviado', False) else ""
 
-                        imagem_abertura_url = ocorr.get("imagem_url", "")
-                        imagem_finalizacao_url = ocorr.get("imagem_finalizacao_url", "")
+                        imagem_abertura_url = html.escape(ocorr.get("imagem_url", ""), quote=True)
+                        imagem_finalizacao_url = html.escape(ocorr.get("imagem_finalizacao_url", ""), quote=True)
+
 
                         cor = ocorr.get("Cor", "#34495e")
-                        status = ocorr.get("Status", "Finalizada")
+                        status = html.escape(ocorr.get("Status", "Finalizada"))  # ESCAPADO
+                        numero_ticket = html.escape(str(ocorr.get('numero_ticket', 'N/A')))
 
                         html_card = f"""
                         <div style='background-color:{cor};padding:10px;border-radius:10px;color:white;
                         box-shadow: 0 4px 10px rgba(0,0,0,0.3);margin-bottom:5px;min-height:250px;font-size:15px;'>
 
-                        <strong>Ticket #:</strong> {ocorr.get('numero_ticket', 'N/A')}<br>
-                        {f'📸 Abertura: <a href="{imagem_abertura_url}" target="_blank" style="text-decoration:underline;color:white;">Baixar</a><br>' if imagem_abertura_url else ''}
-                        {f'📸 Finalização: <a href="{imagem_finalizacao_url}" target="_blank" style="text-decoration:underline;color:white;">Baixar</a><br>' if imagem_finalizacao_url else ''}
+                        <strong>Ticket #:</strong> {numero_ticket}<br>
+                        {'📸 Abertura: <a href="' + imagem_abertura_url + '" target="_blank" style="text-decoration:underline;color:white;">Baixar</a><br>' if imagem_abertura_url else ''}
+                        {'📸 Finalização: <a href="' + imagem_finalizacao_url + '" target="_blank" style="text-decoration:underline;color:white;">Baixar</a><br>' if imagem_finalizacao_url else ''}
                         <strong>Status:</strong> {status}<br>
                         {email_abertura}<br>
                         {email_finalizacao}<br>
-                        <strong>NF:</strong> {ocorr.get('nota_fiscal', '-')}<br>
-                        <strong>Cliente:</strong> {ocorr.get('cliente', '-')}<br>
-                        <strong>Destinatário:</strong> {ocorr.get('destinatario', '-')}<br>
-                        <strong>Focal:</strong> {ocorr.get('focal', '-')}<br>
-                        <strong>Cidade:</strong> {ocorr.get('cidade', '-')}<br>
-                        <strong>Motorista:</strong> {ocorr.get('motorista', '-')}<br>
-                        <strong>Tipo:</strong> {ocorr.get('tipo_de_ocorrencia', '-')}<br>
-                        <strong>Aberto por:</strong> {ocorr.get('responsavel', '-')}<br>
-                        <strong>Finalizado por:</strong> {ocorr.get('finalizado_por', '-')}<br>
+                        <strong>NF:</strong> {html.escape(str(ocorr.get('nota_fiscal', '-')))}<br>
+                        <strong>Cliente:</strong> {html.escape(str(ocorr.get('cliente', '-')))}<br>
+                        <strong>Destinatário:</strong> {html.escape(str(ocorr.get('destinatario', '-')))}<br>
+                        <strong>Focal:</strong> {html.escape(str(ocorr.get('focal', '-')))}<br>
+                        <strong>Cidade:</strong> {html.escape(str(ocorr.get('cidade', '-')))}<br>
+                        <strong>Motorista:</strong> {html.escape(str(ocorr.get('motorista', '-')))}<br>
+                        <strong>Tipo:</strong> {html.escape(str(ocorr.get('tipo_de_ocorrencia', '-')))}<br>
+                        <strong>Aberto por:</strong> {html.escape(str(ocorr.get('responsavel', '-')))}<br>
+                        <strong>Finalizado por:</strong> {html.escape(str(ocorr.get('finalizado_por', '-')))}<br>
                         <strong>Data Abertura:</strong> {data_abertura_manual}<br>
                         <strong>Hora Abertura:</strong> {hora_abertura_manual}<br>
                         <strong>Data Finalização:</strong> {data_finalizacao_manual}<br>
                         <strong>Hora Finalização:</strong> {hora_finalizacao_manual}<br>
-                        <strong>Permanência:</strong> {ocorr.get('permanencia_manual', '-')}<br>
-                        <strong>Complementar:</strong> {ocorr.get('complementar', '')}<br>
+                        <strong>Permanência:</strong> {html.escape(str(ocorr.get('permanencia_manual', '-')))}<br>
+                        <strong>Complementar:</strong> {html.escape(str(ocorr.get('complementar', '')))}<br>
                         </div>
                         """
-
                     except Exception as e:
                         st.warning(f"⚠️ Erro ao montar card de ocorrência: {e}")
                         html_card = """
