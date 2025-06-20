@@ -225,7 +225,6 @@ abas_admin = {
     "📝 Nova Ocorrência": "aba1",
     "📌 Ocorrências em Aberto": "aba2",
     "✅ Ocorrências Finalizadas": "aba3",
-    #"📝 Tickets por Focal": "aba5",
     "📊 Configurações": "aba4",
     "📧 Notificações por E-mail": "aba6",
     "🔄 Cadastros": "aba7",
@@ -236,7 +235,6 @@ abas_usuario = {
     "📝 Nova Ocorrência": "aba1",
     "📌 Ocorrências em Aberto": "aba2",
     "✅ Ocorrências Finalizadas": "aba3",
-    #"📝 Tickets por Focal": "aba5",
     "📊 Configurações": "aba4",
     "🔄 Cadastros": "aba7",
     "📊 Estatística": "aba8"
@@ -1284,32 +1282,24 @@ if st.session_state.aba_ativa == "aba2":
         st.cache_data.clear()
         st.session_state.ocorrencias_abertas = carregar_ocorrencias_abertas()
 
-    # Dados carregados
     ocorrencias_abertas = st.session_state.get("ocorrencias_abertas", [])
 
-    # 🔥 Verificar e enviar e-mails para ocorrências abertas (se necessário)
     for ocorr in ocorrencias_abertas:
         if not ocorr.get("email_abertura_enviado", False):
             verificar_e_enviar_email_abertura(ocorr)
 
-    # ==============================
-    # 🔍 FILTRO POR FOCAL
-    # ==============================
-
-    # Gerar lista de focais únicos
+    # Filtro por Focal
     lista_focais = sorted(set(
         (ocorr.get('focal') or 'Sem Focal').strip()
         for ocorr in ocorrencias_abertas
     ))
 
-    # Selectbox de filtro
     focal_selecionado = st.selectbox(
         "🔎 Filtrar por Focal:",
         options=["Todos"] + lista_focais,
         index=0
     )
 
-    # Aplicar filtro
     if focal_selecionado != "Todos":
         ocorrencias_filtradas = [
             ocorr for ocorr in ocorrencias_abertas
@@ -1318,10 +1308,7 @@ if st.session_state.aba_ativa == "aba2":
     else:
         ocorrencias_filtradas = ocorrencias_abertas
 
-    # ==============================
-    # 🔥 EXIBIÇÃO DAS OCORRÊNCIAS
-    # ==============================
-
+    # ✅ EXIBIÇÃO DOS TICKETS (corretamente posicionado fora do filtro)
     if not ocorrencias_filtradas:
         st.info("ℹ️ Nenhuma ocorrência aberta no momento para esse filtro.")
     else:
@@ -1349,20 +1336,14 @@ if st.session_state.aba_ativa == "aba2":
 
             with colunas[idx % num_colunas]:
                 safe_idx = f"{idx}_{ocorr.get('nota_fiscal', '')}"
-
                 email_enviado = ocorr.get('email_abertura_enviado', False)
                 imagem_abertura_url = ocorr.get('imagem_abertura_url', '')
                 imagem_finalizacao_url = ocorr.get('imagem_finalizacao_url', '')
-
-                indicador_imagem = ""
-                if imagem_abertura_url:
-                    indicador_imagem += f'<br>📸 Abertura: <a href="{imagem_abertura_url}" target="_blank" style="text-decoration:underline;color:white;">Baixar</a>'
 
                 st.markdown(
                     f"""
                     <div style='background-color:{cor};padding:10px;border-radius:10px;color:white;
                     box-shadow: 0 4px 10px rgba(0,0,0,0.3);margin-bottom:5px;min-height:250px;font-size:15px;'>
-
                     <strong>Ticket #:</strong> {str(ocorr.get('numero_ticket', 'N/A'))[-5:]}<br>
                     {'📸 Abertura: <a href="' + imagem_abertura_url + '" target="_blank" style="text-decoration:underline;color:white;">Baixar</a><br>' if imagem_abertura_url else ''}
                     <strong>Status:</strong> {status}<br>
@@ -1383,40 +1364,26 @@ if st.session_state.aba_ativa == "aba2":
                     unsafe_allow_html=True
                 )
 
-                # 🔥 Botão de finalização
+                # 🔥 Botão ou formulário de finalização
                 if st.session_state.get("ticket_em_finalizacao") == safe_idx:
                     with st.form(f"form_{safe_idx}"):
-
-
-
-                        # Inicializa os campos no session_state com garantia de tipos válidos
                         chave_data = f"data_final_{safe_idx}"
                         chave_hora = f"hora_final_{safe_idx}"
 
-                        # Data: garantir que é um datetime.date
                         if chave_data not in st.session_state or not isinstance(st.session_state[chave_data], date):
                             st.session_state[chave_data] = obter_data_hora_atual_brasil().date()
 
-                        # Hora: garantir que é um datetime.time
                         if chave_hora not in st.session_state or not isinstance(st.session_state[chave_hora], time):
-
-
                             st.session_state[chave_hora] = obter_data_hora_atual_brasil().time()
 
-                        # Inputs lado a lado
                         col_data, col_hora = st.columns(2)
                         with col_data:
                             st.date_input("Data Finalização", key=chave_data, format="DD/MM/YYYY")
                         with col_hora:
                             st.time_input("Hora Finalização", key=chave_hora)
 
-                        # Recuperar valores digitados (tipos garantidos)
                         data_finalizacao_manual = st.session_state[chave_data]
                         hora_finalizacao_manual = st.session_state[chave_hora]
-
-
-
-
 
                         complemento = st.text_area("Complementar não Fiscal", key=f"complemento_final_{safe_idx}")
                         observacao_final = st.text_area("Observação", key=f"observacao_final_{safe_idx}")
@@ -1447,7 +1414,6 @@ if st.session_state.aba_ativa == "aba2":
                                     except Exception as e:
                                         st.warning(f"⚠️ Falha ao enviar imagem: {e}")
 
-                                # ✅ Diagnóstico do que será salvo
                                 st.write("🧪 Será salvo:", data_finalizacao_manual.strftime("%d-%m-%Y"), hora_finalizacao_manual.strftime("%H:%M:%S"))
 
                                 sucesso, mensagem = finalizar_ocorrencia(
@@ -1466,10 +1432,11 @@ if st.session_state.aba_ativa == "aba2":
                                     st.rerun()
                                 else:
                                     st.warning(f"⚠️ A finalização falhou: {mensagem}")
-        else:
-            if st.button("Finalizar", key=f"btn_finalizar_{safe_idx}"):
-                st.session_state.ticket_em_finalizacao = safe_idx
-                st.rerun()
+                else:
+                    if st.button("Finalizar", key=f"btn_finalizar_{safe_idx}"):
+                        st.session_state.ticket_em_finalizacao = safe_idx
+                        st.rerun()
+
 
 
 
