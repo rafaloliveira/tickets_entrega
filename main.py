@@ -1337,7 +1337,7 @@ if st.session_state.aba_ativa == "aba2":
             with colunas[idx % num_colunas]:
                 safe_idx = f"{idx}_{ocorr.get('nota_fiscal', '')}"
                 email_enviado = ocorr.get('email_abertura_enviado', False)
-                imagem_abertura_url = ocorr.get('imagem_abertura_url', '')
+                imagem_abertura_url = ocorr.get('imagem_url', '')
                 imagem_finalizacao_url = ocorr.get('imagem_finalizacao_url', '')
 
                 st.markdown(
