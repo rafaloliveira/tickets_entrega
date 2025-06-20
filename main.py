@@ -1601,15 +1601,19 @@ if st.session_state.aba_ativa == "aba3":
                         """
                     except Exception as e:
                         st.warning(f"⚠️ Erro ao montar card de ocorrência: {e}")
-                        html_card = """
-                        <div style='background-color:gray;padding:10px;border-radius:10px;color:white;
-                        box-shadow: 0 4px 10px rgba(0,0,0,0.3);margin-bottom:5px;min-height:250px;font-size:15px;'>
-                        <strong>⚠️ Erro ao carregar ticket</strong><br>
-                        Verifique os dados no Supabase ou tente novamente.
-                        </div>
-                        """
-                    finally:
-                        st.markdown(html_card, unsafe_allow_html=True)
+                        st.markdown(
+                            f"""
+                            <div style='background-color:#7f8c8d;padding:10px;border-radius:10px;color:white;
+                            box-shadow: 0 4px 10px rgba(0,0,0,0.3);margin-bottom:5px;min-height:250px;font-size:15px;'>
+                            <strong>⚠️ Erro ao exibir ocorrência</strong><br>
+                            NF: {html.escape(str(ocorr.get('nota_fiscal', '-')))}<br>
+                            Motivo: {html.escape(str(e))}
+                            </div>
+                            """,
+                            unsafe_allow_html=True
+                        )
+                        continue
+
 
 
 
