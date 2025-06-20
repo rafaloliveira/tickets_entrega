@@ -1568,7 +1568,7 @@ if st.session_state.aba_ativa == "aba3":
                         <strong>Ticket #:</strong> {seguro(ocorr['numero_ticket'])}<br>
                         {'📸 Abertura: <a href="' + imagem_abertura_url + '" target="_blank" style="text-decoration:underline;color:white;">Baixar</a><br>' if imagem_abertura_url else ''}
                         {'📸 Finalização: <a href="' + imagem_finalizacao_url + '" target="_blank" style="text-decoration:underline;color:white;">Baixar</a><br>' if imagem_finalizacao_url else ''}
-                        <strong>Status:</strong> {seguro(ocorr['Status'])}<br>
+                        
                         {email_abertura}<br>
                         {email_finalizacao}<br>
                         <strong>NF:</strong> {seguro(ocorr['nota_fiscal'])}<br>
