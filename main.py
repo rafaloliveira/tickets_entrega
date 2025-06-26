@@ -1268,6 +1268,7 @@ def finalizar_ocorrencia(ocorr, complemento, data_finalizacao_manual, hora_final
     except Exception as e:
         return False, f"Erro ao finalizar ocorrência: {e}"
 
+
 # =========================
 #     ABA 2 - EM ABERTO (COM FILTRO POR FOCAL)
 # =========================
@@ -1284,9 +1285,24 @@ if st.session_state.aba_ativa == "aba2":
 
     ocorrencias_abertas = st.session_state.get("ocorrencias_abertas", [])
 
-    for ocorr in ocorrencias_abertas:
-        if not ocorr.get("email_abertura_enviado", False):
-            verificar_e_enviar_email_abertura(ocorr)
+    # ⏱️ Auto refresh a cada 7 minutos (420.000 ms)
+    st_autorefresh(interval=7 * 60 * 1000, key="auto_refresh_abertas")
+
+    # 🚫 Garantir que não envie múltiplos e-mails no mesmo ciclo
+    if "emails_abertura_enviados" not in st.session_state:
+        st.session_state.emails_abertura_enviados = False
+
+    if not st.session_state.emails_abertura_enviados:
+        resultados_emails = notificar_ocorrencias_abertas()
+        st.session_state.emails_abertura_enviados = True
+
+        for resultado in resultados_emails:
+            if resultado["status"] == "sucesso":
+                st.toast(f"📧 {resultado['mensagem']}")
+            else:
+                st.warning(f"⚠️ Erro para {resultado.get('cliente', 'cliente desconhecido')}: {resultado['mensagem']}")
+
+
 
     # Filtro por Focal
     lista_focais = sorted(set(
