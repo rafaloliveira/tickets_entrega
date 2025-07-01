@@ -726,18 +726,17 @@ def classificar_ocorrencia_por_tempo(data_str, hora_str):
         agora = obter_data_hora_atual_brasil()
         diferenca = calcular_diferenca_tempo(data_hora, agora)
         
-        # Classifica com base no tempo decorrido (novos intervalos)
         if diferenca <= timedelta(minutes=15):
             return "Até 15min", "#2ecc71"  # Verde
         elif diferenca <= timedelta(minutes=30):
             return "15-30min", "#f39c12"  # Laranja
         elif diferenca <= timedelta(minutes=45):
             return "30-45min", "#e74c3c"  # Vermelho
+        elif diferenca <= timedelta(minutes=90):
+            return "45-90min", "#800000"  # Vermelho escuro
         else:
-            return "Mais de 45min", "#800000"  # Vermelho escuro
-            
-    except Exception as e:
-        print(f"Erro ao classificar ocorrência: {e}")
+            return "Acima de 90min", "#400A40"  # Roxo
+    except Exception:
         return "Erro", "gray"
     
 
@@ -820,6 +819,111 @@ def marcar_email_como_enviado(ocorrencia_id, tipo="abertura"):
     except Exception as e:
         st.error(f"Erro ao atualizar status de e-mail enviado: {e}")
         return False
+
+
+def verificar_e_enviar_email_90min(ocorrencia):
+    """Envia e-mail após 1h30 de espera no local, apenas uma vez"""
+    try:
+        if ocorrencia.get("email_90min_enviado", False):
+            return False, "E-mail 1h30 já enviado."
+
+        agora = obter_data_hora_atual_brasil()
+
+        if ocorrencia.get("data_abertura_manual") and ocorrencia.get("hora_abertura_manual"):
+            data_hora_abertura = criar_datetime_manual(
+                ocorrencia["data_abertura_manual"],
+                ocorrencia["hora_abertura_manual"]
+            )
+
+            diferenca = calcular_diferenca_tempo(data_hora_abertura, agora)
+
+            if diferenca <= timedelta(minutes=90):
+                return False, "Ainda não passou 1h30."
+
+            cliente = ocorrencia.get('cliente')
+            emails = carregar_dados_clientes_email()
+            if cliente not in emails:
+                return False, "Cliente sem e-mail."
+
+            email_principal = emails[cliente]['principal']
+            email_copia = emails[cliente]['copia']
+            imagem_url = ocorrencia.get("imagem_url", "")
+            data_hora_str = f"{ocorrencia['data_abertura_manual']} {ocorrencia['hora_abertura_manual']}"
+
+            if imagem_url:
+                imagem_html = f"""
+                <tr>
+                    <th>Imagem Ticket</th>
+                    <td><a href="{imagem_url}" target="_blank">Baixar Imagem</a></td>
+                </tr>
+                """
+            else:
+                imagem_html = "<tr><th>Imagem Ticket</th><td>Não Anexada</td></tr>"
+
+            # Corpo do e-mail com layout em tabela
+            corpo_html = f"""
+            <html>
+            <head>
+                <style>
+                    body {{ font-family: Arial, sans-serif; }}
+                    table {{ border-collapse: collapse; width: 100%; }}
+                    th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+                    th {{ background-color: #f2f2f2; }}
+                    .header {{ background-color: #800080; color: white; padding: 10px; }}
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <h2>🚛 Veículo Aguardando Descarga - 1h30</h2>
+                </div>
+                <p>Prezado cliente <strong>{cliente}</strong>,</p>
+                <p>Informamos que o veículo referente à NF abaixo está no local aguardando descarga há 1:30h.</p>
+                <p>Não havendo a liberação de saída, passará a incidir <strong>taxa de carro dedicado</strong> conforme tabela comercial.</p>
+                <p>No aguardo das suas instruções.</p>
+                <table>
+                    <tr><th>Ticket</th><td>{ocorrencia.get('numero_ticket', '-')}</td></tr>
+                    <tr><th>Nota Fiscal</th><td>{ocorrencia.get('nota_fiscal', '-')}</td></tr>
+                    <tr><th>Destinatário</th><td>{ocorrencia.get('destinatario', '-')}</td></tr>
+                    <tr><th>Cidade</th><td>{ocorrencia.get('cidade', '-')}</td></tr>
+                    <tr><th>Motorista</th><td>{ocorrencia.get('motorista', '-')}</td></tr>
+                    <tr><th>Tipo</th><td>{ocorrencia.get('tipo_de_ocorrencia', '-')}</td></tr>
+                    <tr><th>Data/Hora Abertura</th><td>{data_hora_str}</td></tr>
+                    {imagem_html}
+                </table>
+                <p>Atenciosamente,<br>Equipe de Monitoramento ClikLog Transportes</p>
+                <p style="color:gray; font-size:12px;">⚠️ Este é um e-mail automático. Por favor, não responda.</p>
+            </body>
+            </html>
+            """
+
+            assunto = f"⚠️ Veículo aguardando descarga há 1h30 - NF {ocorrencia.get('nota_fiscal', '-')}"
+            sucesso, mensagem = enviar_email(email_principal, email_copia, assunto, corpo_html, imagem_url)
+
+            if sucesso:
+                supabase.table("ocorrencias").update({
+                    "email_90min_enviado": True
+                }).eq("id", ocorrencia["id"]).execute()
+
+                supabase.table("emails_enviados").insert({
+                    "data": data_hora_abertura.strftime("%d-%m-%Y %H:%M:%S"),
+                    "tipo": "1h30",
+                    "cliente": cliente,
+                    "email": email_principal,
+                    "ticket": ocorrencia.get('numero_ticket', '-'),
+                    "nota_fiscal": ocorrencia.get('nota_fiscal', '-'),
+                    "status": "Enviado"
+                }).execute()
+
+                return True, "E-mail 1h30 enviado com sucesso."
+            else:
+                return False, mensagem
+
+        return False, "Data/hora de abertura ausente."
+    except Exception as e:
+        return False, f"Erro: {e}"
+
+
+
 
 def enviar_email(destinatario, copia, assunto, corpo, imagem_url=None):
     """Envia e-mail com corpo HTML e anexo de imagem (se fornecido)."""
@@ -1089,19 +1193,18 @@ def enviar_email_finalizacao(ocorrencia):
 
 
 def notificar_ocorrencias_abertas():
-    """Notifica clientes sobre ocorrências abertas há mais de 30 minutos e atualiza o status no banco."""
+    """Notifica clientes sobre ocorrências abertas há mais de 30 minutos e também aquelas com mais de 1h30."""
     resultados = []
-    
+
     # Obter ocorrências abertas há mais de 30 minutos que ainda não receberam e-mail
     ocorrencias = obter_ocorrencias_abertas_30min()
-    
+
     if not ocorrencias:
         return [{"status": "info", "mensagem": "Não há ocorrências abertas há mais de 30 minutos que precisem de notificação."}]
-    
-    # Enviar e-mail para cada ocorrência individualmente
+
+    # Notificação de abertura (30min)
     for ocorr in ocorrencias:
         sucesso, mensagem = verificar_e_enviar_email_abertura(ocorr)
-        
         resultados.append({
             "cliente": ocorr.get('cliente'),
             "ticket": ocorr.get('numero_ticket', '-'),
@@ -1109,8 +1212,32 @@ def notificar_ocorrencias_abertas():
             "status": "sucesso" if sucesso else "erro",
             "mensagem": mensagem
         })
-    
+
+    # Nova verificação para tickets com mais de 1h30
+    for ocorr in ocorrencias:
+        try:
+            diferenca = calcular_diferenca_tempo(
+                criar_datetime_manual(
+                    ocorr.get("data_abertura_manual"),
+                    ocorr.get("hora_abertura_manual")
+                ),
+                obter_data_hora_atual_brasil()
+            )
+            if diferenca > timedelta(minutes=90):
+                sucesso, mensagem = verificar_e_enviar_email_90min(ocorr)
+                if sucesso:
+                    resultados.append({
+                        "cliente": ocorr.get('cliente'),
+                        "ticket": ocorr.get('numero_ticket', '-'),
+                        "nota_fiscal": ocorr.get('nota_fiscal', '-'),
+                        "status": "sucesso",
+                        "mensagem": f"Email 1h30 enviado: {mensagem}"
+                    })
+        except Exception as e:
+            st.warning(f"Erro ao processar email 1h30 para ticket {ocorr.get('numero_ticket')}: {e}")
+
     return resultados
+
 
 def testar_conexao_smtp():
     """Testa apenas a conexão com o servidor SMTP."""
