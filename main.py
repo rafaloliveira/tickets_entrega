@@ -907,7 +907,7 @@ def verificar_e_enviar_email_90min(ocorrencia):
             </head>
             <body>
                 <div class="header">
-                    <h2>🚛 Veículo Aguardando Descarga - 1h30</h2>
+                    <h2>Veículo Aguardando - 1h30</h2>
                 </div>
                 <p>Prezado cliente <strong>{cliente}</strong>,</p>
                 <p>Informamos que o veículo referente à NF abaixo está no local aguardando descarga há 1:30h.</p>
@@ -929,7 +929,7 @@ def verificar_e_enviar_email_90min(ocorrencia):
             </html>
             """
 
-            assunto = f"⚠️ Veículo aguardando descarga há 1h30 - NF {ocorrencia.get('nota_fiscal', '-')}"
+            assunto = f"⚠️ Veículo aguardando há 1h30 - NF {ocorrencia.get('nota_fiscal', '-')}"
             sucesso, mensagem = enviar_email(email_principal, email_copia, assunto, corpo_html, imagem_url)
 
             if sucesso:
@@ -938,7 +938,7 @@ def verificar_e_enviar_email_90min(ocorrencia):
                 }).eq("id", ocorrencia["id"]).execute()
 
                 supabase.table("emails_enviados").insert({
-                    "data": data_hora_abertura.strftime("%d-%m-%Y %H:%M:%S"),
+                    "data_hora": data_hora_abertura.strftime("%d-%m-%Y %H:%M:%S"),
                     "tipo": "1h30",
                     "cliente": cliente,
                     "email": email_principal,
@@ -1458,18 +1458,16 @@ if st.session_state.aba_ativa == "aba2":
     st_autorefresh(interval=7 * 60 * 1000, key="auto_refresh_abertas")
 
     # 🚫 Garantir que não envie múltiplos e-mails no mesmo ciclo
-    if "emails_abertura_enviados" not in st.session_state:
-        st.session_state.emails_abertura_enviados = False
+    
+        # Executa a verificação de ocorrências a cada ciclo
+    resultados_emails = notificar_ocorrencias_abertas()
 
-    if not st.session_state.emails_abertura_enviados:
-        resultados_emails = notificar_ocorrencias_abertas()
-        st.session_state.emails_abertura_enviados = True
+    for resultado in resultados_emails:
+        if resultado["status"] == "sucesso":
+            st.toast(f"📧 {resultado['mensagem']}")
+        else:
+            st.warning(f"⚠️ Erro para {resultado.get('cliente', 'cliente desconhecido')}: {resultado['mensagem']}")
 
-        for resultado in resultados_emails:
-            if resultado["status"] == "sucesso":
-                st.toast(f"📧 {resultado['mensagem']}")
-            else:
-                st.warning(f"⚠️ Erro para {resultado.get('cliente', 'cliente desconhecido')}: {resultado['mensagem']}")
 
 
 
