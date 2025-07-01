@@ -807,6 +807,40 @@ def obter_ocorrencias_abertas_30min():
         st.error(f"Erro ao obter ocorrências abertas: {e}")
         return []
 
+def obter_ocorrencias_abertas_90min():
+    """Obtém ocorrências abertas há mais de 90 minutos que ainda não receberam o e-mail de 1h30."""
+    try:
+        response = supabase.table("ocorrencias") \
+            .select("*") \
+            .eq("status", "Aberta") \
+            .eq("email_90min_enviado", False) \
+            .execute()
+
+        ocorrencias = response.data or []
+        agora = obter_data_hora_atual_brasil()
+        ocorrencias_filtradas = []
+
+        for ocorr in ocorrencias:
+            if ocorr.get("data_abertura_manual") and ocorr.get("hora_abertura_manual"):
+                data_hora = criar_datetime_manual(
+                    ocorr["data_abertura_manual"],
+                    ocorr["hora_abertura_manual"]
+                )
+                if data_hora:
+                    diferenca = calcular_diferenca_tempo(data_hora, agora)
+                    if diferenca > timedelta(minutes=90):
+                        ocorrencias_filtradas.append(ocorr)
+
+        return ocorrencias_filtradas
+
+    except Exception as e:
+        st.error(f"Erro ao obter ocorrências de 90 minutos: {e}")
+        return []
+
+
+
+
+
 def marcar_email_como_enviado(ocorrencia_id, tipo="abertura"):
     """Marca a ocorrência como tendo recebido e-mail."""
     try:
@@ -1196,14 +1230,9 @@ def notificar_ocorrencias_abertas():
     """Notifica clientes sobre ocorrências abertas há mais de 30 minutos e também aquelas com mais de 1h30."""
     resultados = []
 
-    # Obter ocorrências abertas há mais de 30 minutos que ainda não receberam e-mail
-    ocorrencias = obter_ocorrencias_abertas_30min()
-
-    if not ocorrencias:
-        return [{"status": "info", "mensagem": "Não há ocorrências abertas há mais de 30 minutos que precisem de notificação."}]
-
-    # Notificação de abertura (30min)
-    for ocorr in ocorrencias:
+    # 🔸 Etapa 1: e-mails de abertura (30min)
+    ocorrencias_30min = obter_ocorrencias_abertas_30min()
+    for ocorr in ocorrencias_30min:
         sucesso, mensagem = verificar_e_enviar_email_abertura(ocorr)
         resultados.append({
             "cliente": ocorr.get('cliente'),
@@ -1213,30 +1242,30 @@ def notificar_ocorrencias_abertas():
             "mensagem": mensagem
         })
 
-    # Nova verificação para tickets com mais de 1h30
-    for ocorr in ocorrencias:
-        try:
-            diferenca = calcular_diferenca_tempo(
-                criar_datetime_manual(
-                    ocorr.get("data_abertura_manual"),
-                    ocorr.get("hora_abertura_manual")
-                ),
-                obter_data_hora_atual_brasil()
-            )
-            if diferenca > timedelta(minutes=90):
-                sucesso, mensagem = verificar_e_enviar_email_90min(ocorr)
-                if sucesso:
-                    resultados.append({
-                        "cliente": ocorr.get('cliente'),
-                        "ticket": ocorr.get('numero_ticket', '-'),
-                        "nota_fiscal": ocorr.get('nota_fiscal', '-'),
-                        "status": "sucesso",
-                        "mensagem": f"Email 1h30 enviado: {mensagem}"
-                    })
-        except Exception as e:
-            st.warning(f"Erro ao processar email 1h30 para ticket {ocorr.get('numero_ticket')}: {e}")
+    # 🔹 Etapa 2: e-mails de 1h30
+    ocorrencias_90min = obter_ocorrencias_abertas_90min()
+    for ocorr in ocorrencias_90min:
+        sucesso, mensagem = verificar_e_enviar_email_90min(ocorr)
+        if sucesso:
+            resultados.append({
+                "cliente": ocorr.get('cliente'),
+                "ticket": ocorr.get('numero_ticket', '-'),
+                "nota_fiscal": ocorr.get('nota_fiscal', '-'),
+                "status": "sucesso",
+                "mensagem": f"E-mail 1h30 enviado: {mensagem}"
+            })
+        else:
+            resultados.append({
+                "cliente": ocorr.get('cliente'),
+                "ticket": ocorr.get('numero_ticket', '-'),
+                "nota_fiscal": ocorr.get('nota_fiscal', '-'),
+                "status": "erro",
+                "mensagem": mensagem
+            })
 
     return resultados
+
+
 
 
 def testar_conexao_smtp():
