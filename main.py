@@ -813,7 +813,7 @@ def obter_ocorrencias_abertas_90min():
         response = supabase.table("ocorrencias") \
             .select("*") \
             .eq("status", "Aberta") \
-            .eq("email_90min_enviado", False) \
+            .or_("email_90min_enviado.is.null,email_90min_enviado.eq.false") \
             .execute()
 
         agora = obter_data_hora_atual_brasil()
@@ -833,6 +833,7 @@ def obter_ocorrencias_abertas_90min():
     except Exception as e:
         st.error(f"Erro ao obter ocorrências de 90min: {e}")
         return []
+
 
 
 
