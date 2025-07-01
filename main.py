@@ -808,7 +808,7 @@ def obter_ocorrencias_abertas_30min():
         return []
 
 def obter_ocorrencias_abertas_90min():
-    """Obtém ocorrências abertas há mais de 90 minutos que ainda não receberam o e-mail de 1h30."""
+    """Obtém ocorrências abertas há mais de 1h30 e que ainda não receberam o e-mail de 90 minutos."""
     try:
         response = supabase.table("ocorrencias") \
             .select("*") \
@@ -816,26 +816,24 @@ def obter_ocorrencias_abertas_90min():
             .eq("email_90min_enviado", False) \
             .execute()
 
-        ocorrencias = response.data or []
         agora = obter_data_hora_atual_brasil()
-        ocorrencias_filtradas = []
+        ocorrencias_validas = []
 
-        for ocorr in ocorrencias:
+        for ocorr in response.data or []:
             if ocorr.get("data_abertura_manual") and ocorr.get("hora_abertura_manual"):
                 data_hora = criar_datetime_manual(
                     ocorr["data_abertura_manual"],
                     ocorr["hora_abertura_manual"]
                 )
-                if data_hora:
-                    diferenca = calcular_diferenca_tempo(data_hora, agora)
-                    if diferenca > timedelta(minutes=90):
-                        ocorrencias_filtradas.append(ocorr)
+                if data_hora and calcular_diferenca_tempo(data_hora, agora) > timedelta(minutes=90):
+                    ocorrencias_validas.append(ocorr)
 
-        return ocorrencias_filtradas
+        return ocorrencias_validas
 
     except Exception as e:
-        st.error(f"Erro ao obter ocorrências de 90 minutos: {e}")
+        st.error(f"Erro ao obter ocorrências de 90min: {e}")
         return []
+
 
 
 
@@ -1246,25 +1244,39 @@ def notificar_ocorrencias_abertas():
     ocorrencias_90min = obter_ocorrencias_abertas_90min()
     for ocorr in ocorrencias_90min:
         sucesso, mensagem = verificar_e_enviar_email_90min(ocorr)
-        if sucesso:
-            resultados.append({
-                "cliente": ocorr.get('cliente'),
-                "ticket": ocorr.get('numero_ticket', '-'),
-                "nota_fiscal": ocorr.get('nota_fiscal', '-'),
-                "status": "sucesso",
-                "mensagem": f"E-mail 1h30 enviado: {mensagem}"
-            })
-        else:
-            resultados.append({
-                "cliente": ocorr.get('cliente'),
-                "ticket": ocorr.get('numero_ticket', '-'),
-                "nota_fiscal": ocorr.get('nota_fiscal', '-'),
-                "status": "erro",
-                "mensagem": mensagem
-            })
+        resultados.append({
+            "cliente": ocorr.get('cliente'),
+            "ticket": ocorr.get('numero_ticket', '-'),
+            "nota_fiscal": ocorr.get('nota_fiscal', '-'),
+            "status": "sucesso" if sucesso else "erro",
+            "mensagem": f"E-mail 1h30: {mensagem}"
+        })
 
     return resultados
 
+
+def obter_ocorrencias_90min():
+    """Obtém todas ocorrências abertas que ainda não receberam o e-mail de 90min e já passaram de 1h30."""
+    try:
+        response = supabase.table("ocorrencias") \
+            .select("*") \
+            .eq("status", "Aberta") \
+            .eq("email_90min_enviado", False) \
+            .execute()
+        
+        agora = obter_data_hora_atual_brasil()
+        ocorrencias_validas = []
+        
+        for ocorr in response.data:
+            if ocorr.get("data_abertura_manual") and ocorr.get("hora_abertura_manual"):
+                dt = criar_datetime_manual(ocorr["data_abertura_manual"], ocorr["hora_abertura_manual"])
+                if dt and calcular_diferenca_tempo(dt, agora) > timedelta(minutes=90):
+                    ocorrencias_validas.append(ocorr)
+        
+        return ocorrencias_validas
+    except Exception as e:
+        st.error(f"Erro ao obter ocorrências de 90min: {e}")
+        return []
 
 
 
