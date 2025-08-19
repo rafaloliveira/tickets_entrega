@@ -5,6 +5,7 @@
 
 
 import streamlit as st
+import base64
 st.set_page_config(
     page_title="F4Stay",
     page_icon="assets/Logo FA.png",  # caminho da imagem do favicon
