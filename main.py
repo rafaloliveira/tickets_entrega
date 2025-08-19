@@ -122,82 +122,211 @@ def autenticar_usuario(nome_usuario, senha):
         st.error("Erro ao autenticar.")
         return None
 
+
+
 # --- Interface de Login ---
+import base64
+from datetime import datetime, timezone, timedelta
+import streamlit as st
+
+def get_base64_image(image_path):
+    with open(image_path, "rb") as img_file:
+        return base64.b64encode(img_file.read()).decode()
+
 def login():
     login_cookie = cookies.get("login")
     username_cookie = cookies.get("username")
     is_admin_cookie = cookies.get("is_admin")
     expiry_time_cookie = cookies.get("expiry_time")
+    classe_cookie = cookies.get("classe")  # Pega a classe do cookie
 
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.markdown("<h1 style='text-align: center;'>📝 Entregas - Tempo de Permanência </h1>", unsafe_allow_html=True)
-
-    # Se o login já foi feito e o cookie não expirou, configura a sessão
+    # Verifica se já está logado via cookie e se o cookie não expirou
     if login_cookie and username_cookie and not is_cookie_expired(expiry_time_cookie):
-        # Buscar unidade do usuário logado
-        try:
-            usuario_data = supabase.table("usuarios").select("unidade").eq("nome_usuario", username_cookie).execute().data
-            unidade_cookie = usuario_data[0]["unidade"] if usuario_data else "Não definida"
-        except:
-            unidade_cookie = "Não definida"
-
-        # Preenche session_state
         st.session_state.login = True
         st.session_state.username = username_cookie
         st.session_state.is_admin = is_admin_cookie == "True"
-        st.session_state.unidade = unidade_cookie
+        st.session_state.classe = classe_cookie
+        return  # Sai da função, usuário já logado
 
-        st.markdown(f"👋 **Bem-vindo, {st.session_state.username}!**")
+    # Linha 1 → só para a imagem principal
+    col1, col2, col3 = st.columns([0.5, 3, 0.5])
+    with col2:
+        image_col_left, image_col_center, image_col_right = st.columns([1, 1, 1])
+        with image_col_center:
+            st.image("assets/logo_fundo_branco.jpg", width=500)
 
-        # Botão de logout
-        col1, col2, col3 = st.columns([6, 1, 1])
-        with col3:
-            if st.button("🔒 Sair", key="logout_button"):
-                cookies["login"] = ""
-                cookies["username"] = ""
-                cookies["is_admin"] = ""
-                cookies["expiry_time"] = ""
-                cookies.save()
-                st.session_state.login = False
-                st.rerun()
+    # Linha do título (centralizado) + Logo FA.png no final
+    img_base64 = get_base64_image("assets/Logo FA.png")
+    title_col1, title_col2, title_col3 = st.columns([1, 2, 1])
+    with title_col2:
+        st.markdown(
+            f"""
+            <h2 style="text-align: center; color: #999; margin-top: 10px; margin-bottom: 30px;">
+                Sistema de Monitoramento F4Stay
+                <img src="data:image/png;base64,{img_base64}" 
+                     alt="logo" style="width:60px; height:30px; margin-left:10px; vertical-align:middle;">
+            </h2>
+            """,
+            unsafe_allow_html=True
+        )
 
-    else:
-        # Exibe formulário de login
-        with col2:
-            st.markdown("##### Login")
-            username = st.text_input("Usuário")
-            senha = st.text_input("Senha", type="password")
+    # Linha 2 → só para o formulário de login
+    form_col1, form_col2, form_col3 = st.columns([0.6, 1, 0.6])
+    with form_col2:
+        st.markdown("#### 🔐 Login")
+        nome = st.text_input("Usuário").strip()
+        senha = st.text_input("Senha", type="password").strip()
 
-            if st.button("Entrar", key="login_button"):
-                usuario = autenticar_usuario(username, senha)
-                if usuario:
-                    # Armazenar cookies
-                    cookies["login"] = str(True)
-                    cookies["username"] = usuario["nome_usuario"]
-                    cookies["is_admin"] = str(usuario.get("is_admin", False))
-                    expiry_time = datetime.now(timezone.utc) + timedelta(hours=24)
-                    cookies["expiry_time"] = expiry_time.strftime("%Y-%m-%d %H:%M:%S")
-                    cookies.save()
+        if st.button("Entrar"):
+            usuario = autenticar_usuario(nome, senha)
+            if usuario:
+                # Armazena as informações no cookie
+                cookies["login"] = "True"
+                cookies["username"] = usuario["nome_usuario"]
+                cookies["is_admin"] = str(usuario.get("is_admin", False))
+                cookies["classe"] = usuario.get("classe", "colaborador")
 
-                    # Armazenar na sessão
-                    st.session_state.login = True
-                    st.session_state.username = usuario["nome_usuario"]
-                    st.session_state.is_admin = usuario.get("is_admin", False)
-                    st.session_state.unidade = usuario.get("unidade", "Não definida")
+                # Define o tempo de expiração do cookie (24 horas)
+                expiry = datetime.now(timezone.utc) + timedelta(hours=24)
+                cookies["expiry_time"] = expiry.strftime("%Y-%m-%d %H:%M:%S")
 
-                    st.rerun()
+                # Armazena as informações no st.session_state
+                st.session_state.login = True
+                st.session_state.username = usuario["nome_usuario"]
+                st.session_state.is_admin = usuario.get("is_admin", False)
+                st.session_state.classe = usuario.get("classe", "colaborador")
 
-        st.stop()
+                # Verifica se o usuário precisa alterar a senha
+                if usuario.get("precisa_alterar_senha") is True:
+                    st.warning("🔐 Você deve alterar sua senha antes de continuar.")
+                    st.stop()
+
+                st.rerun()  # Atualiza a interface após login
+            else:
+                st.error("🛑 Usuário ou senha incorretos.")
+
+    st.stop()
+
+        
+    
+
+    # Linha 2 → só para o formulário (independente da imagem e do título)
+    form_col1, form_col2, form_col3 = st.columns([0.6, 1, 0.6])
+    with form_col2:
+        st.markdown("#### 🔐 Login")
+        nome = st.text_input("Usuário").strip()
+        senha = st.text_input("Senha", type="password").strip()
+
+        if st.button("Entrar"):
+            usuario = autenticar_usuario(nome, senha)
+            if usuario:
+                # Armazena as informações no cookie
+                cookies["login"] = "True"
+                cookies["username"] = usuario["nome_usuario"]
+                cookies["is_admin"] = str(usuario.get("is_admin", False))
+                cookies["classe"] = usuario.get("classe", "colaborador")
+
+                # Define o tempo de expiração do cookie (24 horas)
+                expiry = datetime.now(timezone.utc) + timedelta(hours=8)
+                cookies["expiry_time"] = expiry.strftime("%Y-%m-%d %H:%M:%S")
+
+                # Armazena as informações no st.session_state
+                st.session_state.login = True
+                st.session_state.username = usuario["nome_usuario"]
+                st.session_state.is_admin = usuario.get("is_admin", False)
+                st.session_state.classe = usuario.get("classe", "colaborador")
+
+                # Verifica se o usuário precisa alterar a senha
+                if usuario.get("precisa_alterar_senha") is True:
+                    st.warning("🔐 Você deve alterar sua senha antes de continuar.")
+                    st.stop()
+
+                st.rerun()  # Força um rerun para atualizar a interface
+            else:
+                st.error("🛑 Usuário ou senha incorretos.")
+
+    st.stop()
+
   # Impede que o código continue sendo executado após login falhar
+
+
+
+
+
+# --- Chama login antes de qualquer coisa ---
+
 
 
 # --- Chama login antes de qualquer coisa ---
 login()
 
+# --- Cabeçalho fixo no topo ---
+if st.session_state.get("login", False):
+    image_path = "assets/logo_fundo_branco.jpg" 
 
-# --- SE CHEGOU AQUI, USUÁRIO ESTÁ AUTENTICADO ---
-#--------------------------------------------------------------------------INICIO APP -------------------------------------------------------------
+    # 🔹 Centralizar a logo principal usando colunas
+    col1, col2, col3 = st.columns([2, 2, 1])
+    with col2:
+        try:
+            st.image(image_path, width=380)
+        except FileNotFoundError:
+            st.warning(f"A imagem não foi encontrada em: '{image_path}'. Verifique o caminho.")
+        except Exception as e:
+            st.error(f"Erro ao carregar a imagem: {e}")
+    
+    # 🔹 Linha com título e logo FA à esquerda
+    title_col1, title_col2, title_col3 = st.columns([0.5, 3, 1])
+    with title_col2:
+        import base64
+        def get_base64_image(image_path):
+            with open(image_path, "rb") as img_file:
+                return base64.b64encode(img_file.read()).decode()
+
+        img_base64 = get_base64_image("assets/Logo FA.png")
+
+        # 🔹 Variáveis de ajuste fino
+        title_margin_top = 10       # margem superior em px
+        title_margin_bottom = 50    # margem inferior em px
+        title_padding_left = 430      # ajuste fino para mover título horizontalmente
+        logo_gap = 10               # espaço entre texto e logo
+
+        st.markdown(
+            f"""
+            <h2 style="
+                display: flex; 
+                align-items: center;
+                gap: {logo_gap}px;
+                color: #999;
+                margin-top: {title_margin_top}px;
+                margin-bottom: {title_margin_bottom}px;
+                padding-left: {title_padding_left}px;
+            ">
+                Sistema de Monitoramento F4Stay
+                <img src="data:image/png;base64,{img_base64}" 
+                     alt="logo" style="width:100px; height:50px;">
+            </h2>
+            """,
+            unsafe_allow_html=True
+        )
+
+    # 🔹 Linha com texto de boas-vindas e botão de logout
+    col_welcome_text, col_logout_button = st.columns([5, 0.5])
+    with col_welcome_text:
+        st.markdown(f"👋 **Bem-vindo, {st.session_state.get('username','Usuário')}!**")
+
+    with col_logout_button:
+        if st.button("🚪 Sair"):
+            for key in ["login", "username", "is_admin", "expiry_time"]:
+                cookies[key] = ""
+            st.session_state.login = False
+            st.rerun()
+
+    st.markdown("---")  # linha divisória
+
+
+
+
+
 
 
 #- -- INICIALIZAÇÃO DE SESSÃO ---
@@ -2272,3 +2401,5 @@ if st.session_state.aba_ativa == "aba7":
                 st.error(mensagem)
         
         st.info(f"Configuração atual: E-mails serão enviados após {tempo_atual} minutos.")
+
+        
