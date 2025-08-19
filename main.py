@@ -5,7 +5,11 @@
 
 
 import streamlit as st
-st.set_page_config(page_title="Entregas - Tempo de Permanência", layout="wide")
+st.set_page_config(
+    page_title="F4Stay",
+    page_icon="assets/Logo FA.png",  # caminho da imagem do favicon
+    layout="wide"
+)
 
 import os
 import re
@@ -125,9 +129,7 @@ def autenticar_usuario(nome_usuario, senha):
 
 
 # --- Interface de Login ---
-import base64
-from datetime import datetime, timezone, timedelta
-import streamlit as st
+
 
 def get_base64_image(image_path):
     with open(image_path, "rb") as img_file:
@@ -286,7 +288,7 @@ if st.session_state.get("login", False):
 
         # 🔹 Variáveis de ajuste fino
         title_margin_top = 10       # margem superior em px
-        title_margin_bottom = 50    # margem inferior em px
+        title_margin_bottom = 30    # margem inferior em px
         title_padding_left = 430      # ajuste fino para mover título horizontalmente
         logo_gap = 10               # espaço entre texto e logo
 
