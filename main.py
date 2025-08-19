@@ -162,16 +162,17 @@ def login():
     img_base64 = get_base64_image("assets/Logo FA.png")
     title_col1, title_col2, title_col3 = st.columns([1, 2, 1])
     with title_col2:
+
         st.markdown(
             f"""
-            <h2 style="text-align: center; color: #999; margin-top: 10px; margin-bottom: 30px;">
-                Sistema de Monitoramento F4Stay
-                <img src="data:image/png;base64,{img_base64}" 
-                     alt="logo" style="width:60px; height:30px; margin-left:10px; vertical-align:middle;">
-            </h2>
-            """,
-            unsafe_allow_html=True
-        )
+                <h2 style="text-align: center; color: #999; margin-top: 10px; margin-bottom: 30px; font-size:30px;">
+                    Sistema de Monitoramento F4Stay
+                    <img src="data:image/png;base64,{img_base64}" 
+                        alt="logo" style="width:60px; height:30px; margin-left:10px; vertical-align:middle;">
+                </h2>
+                """,
+                unsafe_allow_html=True
+            )
 
     # Linha 2 → só para o formulário de login
     form_col1, form_col2, form_col3 = st.columns([0.6, 1, 0.6])
