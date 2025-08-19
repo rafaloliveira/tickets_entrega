@@ -291,7 +291,7 @@ if st.session_state.get("login", False):
         # 🔹 Variáveis de ajuste fino
         title_margin_top = 10       # margem superior em px
         title_margin_bottom = 30    # margem inferior em px
-        title_padding_left = 430      # ajuste fino para mover título horizontalmente
+        title_padding_left = 380      # ajuste fino para mover título horizontalmente
         logo_gap = 10               # espaço entre texto e logo
 
         st.markdown(
@@ -304,10 +304,11 @@ if st.session_state.get("login", False):
                 margin-top: {title_margin_top}px;
                 margin-bottom: {title_margin_bottom}px;
                 padding-left: {title_padding_left}px;
+                font-size: 20px;   /* 👈 aqui controla o tamanho da fonte */
             ">
                 Sistema de Monitoramento F4Stay
                 <img src="data:image/png;base64,{img_base64}" 
-                     alt="logo" style="width:100px; height:50px;">
+                    alt="logo" style="width:50px; height:50px;">
             </h2>
             """,
             unsafe_allow_html=True
