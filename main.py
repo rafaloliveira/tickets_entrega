@@ -283,7 +283,7 @@ if st.session_state.get("login", False):
         <style>
         .header-container {{
             width: 100%;
-            background-color: white;
+            background-color: dark;
             display: flex;
             flex-direction: column;
             align-items: center;
