@@ -151,28 +151,59 @@ def login():
         st.session_state.classe = classe_cookie
         return  # Sai da função, usuário já logado
 
-    # Linha 1 → só para a imagem principal
-    col1, col2, col3 = st.columns([0.5, 3, 0.5])
-    with col2:
-        image_col_left, image_col_center, image_col_right = st.columns([1, 1, 1])
-        with image_col_center:
-            st.image("assets/logo_fundo_branco.jpg", width=500)
+    import base64
+    def get_base64_image(image_path):
+        with open(image_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode()
 
-    # Linha do título (centralizado) + Logo FA.png no final
-    img_base64 = get_base64_image("assets/Logo FA.png")
-    title_col1, title_col2, title_col3 = st.columns([1, 2, 1])
-    with title_col2:
+    img_base64_logo_principal = get_base64_image("assets/logo_fundo_branco.jpg")
+    img_base64_fa = get_base64_image("assets/Logo FA.png")
 
-        st.markdown(
-            f"""
-                <h2 style="text-align: center; color: #999; margin-top: 10px; margin-bottom: 30px; font-size:30px;">
-                    Sistema de Monitoramento F4Stay
-                    <img src="data:image/png;base64,{img_base64}" 
-                        alt="logo" style="width:60px; height:30px; margin-left:10px; vertical-align:middle;">
-                </h2>
-                """,
-                unsafe_allow_html=True
-            )
+    # --- CSS responsivo ---
+    st.markdown(
+        f"""
+        <style>
+        .login-header {{
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px 0;
+            margin-bottom: 30px;
+        }}
+
+        .login-header img {{
+            max-width: 500px;
+            height: auto;
+        }}
+
+        .login-title {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            color: #666;
+            font-size: 1.8rem; /* escala com zoom */
+            margin-top: 15px;
+        }}
+
+        .login-title img {{
+            width: 60px;
+            height: 30px;
+        }}
+        </style>
+
+        <div class="login-header">
+            <img src="data:image/png;base64,{img_base64_logo_principal}" alt="Logo Principal">
+            <div class="login-title">
+                Sistema de Monitoramento F4Stay
+                <img src="data:image/png;base64,{img_base64_fa}" alt="Logo FA">
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
     # Linha 2 → só para o formulário de login
     form_col1, form_col2, form_col3 = st.columns([0.6, 1, 0.6])
