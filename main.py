@@ -386,7 +386,7 @@ abas_usuario = {
     "📊 Estatística": "aba8"
 }
 
-abas = abas_admin if st.session_state.is_admin else abas_usuario
+abas = abas_admin if st.session_state.get("is_admin", False) else abas_usuario
 
 # Exibe o menu lateral
 aba_nome = st.sidebar.radio("📁 Menu", list(abas.keys()), key="menu_abas")
