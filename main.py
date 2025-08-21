@@ -262,57 +262,69 @@ def login():
 
 
 # --- Chama login antes de qualquer coisa ---
-login()
-
-# --- Cabeçalho fixo no topo ---
 if st.session_state.get("login", False):
-    image_path = "assets/logo_fundo_branco.jpg" 
 
-    # 🔹 Centralizar a logo principal usando colunas
-    col1, col2, col3 = st.columns([2, 2, 1])
-    with col2:
-        try:
-            st.image(image_path, width=380)
-        except FileNotFoundError:
-            st.warning(f"A imagem não foi encontrada em: '{image_path}'. Verifique o caminho.")
-        except Exception as e:
-            st.error(f"Erro ao carregar a imagem: {e}")
-    
-    # 🔹 Linha com título e logo FA à esquerda
-    title_col1, title_col2, title_col3 = st.columns([0.5, 3, 1])
-    with title_col2:
-        import base64
-        def get_base64_image(image_path):
-            with open(image_path, "rb") as img_file:
-                return base64.b64encode(img_file.read()).decode()
+    import base64
+    import streamlit as st
 
-        img_base64 = get_base64_image("assets/Logo FA.png")
+    # --- Função para converter imagem em base64 ---
+    def get_base64_image(image_path):
+        with open(image_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode()
 
-        # 🔹 Variáveis de ajuste fino
-        title_margin_top = 10       # margem superior em px
-        title_margin_bottom = 30    # margem inferior em px
-        title_padding_left = 380      # ajuste fino para mover título horizontalmente
-        logo_gap = 10               # espaço entre texto e logo
+    # Caminhos das imagens
+    image_path = "assets/logo_fundo_branco.jpg"
+    img_base64_fa = get_base64_image("assets/Logo FA.png")
 
-        st.markdown(
-            f"""
-            <h2 style="
-                display: flex; 
-                align-items: center;
-                gap: {logo_gap}px;
-                color: #999;
-                margin-top: {title_margin_top}px;
-                margin-bottom: {title_margin_bottom}px;
-                padding-left: {title_padding_left}px;
-                font-size: 20px;   /* 👈 aqui controla o tamanho da fonte */
-            ">
+    # --- CSS responsivo (sem fixar) ---
+    st.markdown(
+        f"""
+        <style>
+        .header-container {{
+            width: 100%;
+            background-color: dark;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 10px 0;
+            margin-bottom: 30px; /* espaço abaixo do cabeçalho */
+        }}
+
+        .header-container img {{
+            max-width: 380px;
+            height: auto;
+        }}
+
+        .header-title {{
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #666;
+            font-size: 1.3rem;  /* 👈 escala com zoom */
+            margin-top: 10px;
+        }}
+
+        .header-title img {{
+            width: 40px;
+            height: 40px;
+        }}
+        </style>
+
+        <div class="header-container">
+            <img src="data:image/png;base64,{get_base64_image(image_path)}" alt="Logo Principal">
+            <div class="header-title">
                 Sistema de Monitoramento F4Stay
-                <img src="data:image/png;base64,{img_base64}" 
-                    alt="logo" style="width:50px; height:50px;">
-            </h2>
-            """,
-            unsafe_allow_html=True
-        )
+                <img src="data:image/png;base64,{img_base64_fa}" alt="Logo FA">
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+
+
 
     # 🔹 Linha com texto de boas-vindas e botão de logout
     col_welcome_text, col_logout_button = st.columns([5, 0.5])
