@@ -1,3 +1,6 @@
+#01-10 04
+
+
 # funcionando com envio de e-mail 17-06
 # versão completa com todas as funcionalidades solicitadas
 # versão liberada para usuário com correção de fuso horário e uso exclusivo de datas manuais

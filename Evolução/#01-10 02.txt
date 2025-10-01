@@ -1,3 +1,5 @@
+#01-10 02
+
 # funcionando com envio de e-mail 17-06
 # versão completa com todas as funcionalidades solicitadas
 # versão liberada para usuário com correção de fuso horário e uso exclusivo de datas manuais
@@ -368,16 +370,7 @@ if st.session_state.get("login", False):
 
     st.markdown("---")  # linha divisória
 
-if "login" not in st.session_state:
-    st.session_state.login = False
-if "username" not in st.session_state:
-    st.session_state.username = None
-if "is_admin" not in st.session_state:
-    st.session_state.is_admin = False # Default para não-admin
-if "classe" not in st.session_state:
-    st.session_state.classe = "colaborador" # Classe padrão
-if "unidade_usuario" not in st.session_state:
-    st.session_state.unidade_usuario = "N/A" # Unidade padrão
+
 
 
 
@@ -426,29 +419,18 @@ abas_usuario = {
 
 abas = abas_admin if st.session_state.is_admin else abas_usuario
 
-
-current_user_abas_map = abas_admin if st.session_state.is_admin else abas_usuario
-# --- INICIALIZAÇÃO DA ABA ATIVA (AGORA DE FORMA MAIS ROBUSTA) ---
-if "aba_ativa" not in st.session_state:
-    # Garante que aba_ativa sempre inicie na primeira aba do usuário logado
-    if current_user_abas_map:
-        st.session_state.aba_ativa = list(current_user_abas_map.values())[0]
-    else: # Fallback caso o dicionário de abas esteja vazio (improvável, mas seguro)
-        st.session_state.aba_ativa = "aba1" # Valor padrão mais genérico
-
-
 # Mapeia o nome da aba ativa para o índice correspondente no rádio
 try:
-    current_tab_name = next(key for key, value in current_user_abas_map.items() if value == st.session_state.aba_ativa)
-    initial_index = list(current_user_abas_map.keys()).index(current_tab_name)
+    current_tab_name = next(key for key, value in abas.items() if value == st.session_state.aba_ativa)
+    initial_index = list(abas.keys()).index(current_tab_name)
 except (StopIteration, ValueError):
-    initial_index = 0 # Valor padrão (primeira aba) se não for encontrado (o que não deve acontecer agora)
+    initial_index = 0 # Valor padrão se não encontrar a aba ativa
 
-# Exibe o menu lateral
-aba_nome = st.sidebar.radio("📁 Menu", list(current_user_abas_map.keys()), key="menu_abas", index=initial_index)
+# Exibe o menu lateral, com o índice inicial garantindo que a aba correta esteja selecionada
+aba_nome = st.sidebar.radio("📁 Menu", list(abas.keys()), key="menu_abas", index=initial_index) # NOVO: index=initial_index
 
 # Salva qual aba está ativa
-st.session_state.aba_ativa = current_user_abas_map[aba_nome]
+st.session_state.aba_ativa = abas[aba_nome]
 
 
 
@@ -550,7 +532,6 @@ def inserir_ocorrencia_supabase(dados):
 
 
 # --- CARREGAMENTO DE DADOS Tabelas com nomes de motorista e clientes ---
-@st.cache_data(ttl=3600)
 def carregar_clientes_supabase():
     try:
         response = supabase.table("clientes").select("cliente, focal, enviar_para_email, email_copia").execute()
@@ -636,7 +617,6 @@ except Exception as e:
     st.error(f"Erro ao consultar a tabela motoristas: {e}")
 
 # Buscar lista de focais diretamente do Supabase
-@st.cache_data(ttl=3600)
 def carregar_focal_supabase():
     try:
         response = supabase.table("clientes").select("focal").execute()
@@ -1842,8 +1822,7 @@ if st.session_state.aba_ativa == "aba2":
 
 # =============================== 
 #    FUNÇÃO CARREGAR FINALIZADAS 
-# ===============================  
-@st.cache_data(ttl=420)      
+# ===============================        
 def carregar_ocorrencias_finalizadas():
     try:
         if st.session_state.is_admin:

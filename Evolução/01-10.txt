@@ -368,16 +368,7 @@ if st.session_state.get("login", False):
 
     st.markdown("---")  # linha divisória
 
-if "login" not in st.session_state:
-    st.session_state.login = False
-if "username" not in st.session_state:
-    st.session_state.username = None
-if "is_admin" not in st.session_state:
-    st.session_state.is_admin = False # Default para não-admin
-if "classe" not in st.session_state:
-    st.session_state.classe = "colaborador" # Classe padrão
-if "unidade_usuario" not in st.session_state:
-    st.session_state.unidade_usuario = "N/A" # Unidade padrão
+
 
 
 
@@ -426,30 +417,11 @@ abas_usuario = {
 
 abas = abas_admin if st.session_state.is_admin else abas_usuario
 
-
-current_user_abas_map = abas_admin if st.session_state.is_admin else abas_usuario
-# --- INICIALIZAÇÃO DA ABA ATIVA (AGORA DE FORMA MAIS ROBUSTA) ---
-if "aba_ativa" not in st.session_state:
-    # Garante que aba_ativa sempre inicie na primeira aba do usuário logado
-    if current_user_abas_map:
-        st.session_state.aba_ativa = list(current_user_abas_map.values())[0]
-    else: # Fallback caso o dicionário de abas esteja vazio (improvável, mas seguro)
-        st.session_state.aba_ativa = "aba1" # Valor padrão mais genérico
-
-
-# Mapeia o nome da aba ativa para o índice correspondente no rádio
-try:
-    current_tab_name = next(key for key, value in current_user_abas_map.items() if value == st.session_state.aba_ativa)
-    initial_index = list(current_user_abas_map.keys()).index(current_tab_name)
-except (StopIteration, ValueError):
-    initial_index = 0 # Valor padrão (primeira aba) se não for encontrado (o que não deve acontecer agora)
-
 # Exibe o menu lateral
-aba_nome = st.sidebar.radio("📁 Menu", list(current_user_abas_map.keys()), key="menu_abas", index=initial_index)
+aba_nome = st.sidebar.radio("📁 Menu", list(abas.keys()), key="menu_abas")
 
 # Salva qual aba está ativa
-st.session_state.aba_ativa = current_user_abas_map[aba_nome]
-
+st.session_state.aba_ativa = abas[aba_nome]
 
 
 
@@ -550,7 +522,6 @@ def inserir_ocorrencia_supabase(dados):
 
 
 # --- CARREGAMENTO DE DADOS Tabelas com nomes de motorista e clientes ---
-@st.cache_data(ttl=3600)
 def carregar_clientes_supabase():
     try:
         response = supabase.table("clientes").select("cliente, focal, enviar_para_email, email_copia").execute()
@@ -581,7 +552,6 @@ clientes = df_clientes["cliente"].tolist()
 
 
 # Buscar lista de cidades diretamente do Supabase
-@st.cache_data
 def carregar_cidades_supabase():
     try:
         response = supabase.table("cidades").select("cidade").execute()
@@ -599,7 +569,6 @@ cidades = carregar_cidades_supabase()
 
 
 # Buscar lista de motoristas diretamente do Supabase
-@st.cache_data
 def carregar_motoristas_supabase():
     try:
         motoristas = []
@@ -636,7 +605,6 @@ except Exception as e:
     st.error(f"Erro ao consultar a tabela motoristas: {e}")
 
 # Buscar lista de focais diretamente do Supabase
-@st.cache_data(ttl=3600)
 def carregar_focal_supabase():
     try:
         response = supabase.table("clientes").select("focal").execute()
@@ -1514,7 +1482,6 @@ def testar_conexao_smtp():
     
 
 # Função para carregar ocorrências abertas
-@st.cache_data(ttl=420) # Cache válido por 7 minutos (420 segundos)
 def carregar_ocorrencias_abertas():
     try:
         if st.session_state.is_admin:
@@ -1568,7 +1535,7 @@ def obter_focais_com_contagem():
         return []
 
 # Função para finalizar ocorrência com suporte a imagem na finalização
-def finalizar_ocorrencia(ocorr, complemento, data_finalizacao_manual, hora_finalizacao_manual, imagem_url_finalizacao="", observacao_final="", numero_manifesto_val=""):
+def finalizar_ocorrencia(ocorr, complemento, data_finalizacao_manual, hora_finalizacao_manual, imagem_url_finalizacao="", observacao_final=""):
     try:
         data_abertura_manual = ocorr.get("data_abertura_manual")
         hora_abertura_manual = ocorr.get("hora_abertura_manual")
@@ -1625,7 +1592,6 @@ def finalizar_ocorrencia(ocorr, complemento, data_finalizacao_manual, hora_final
                 "hora_finalizacao_manual": hora_finalizacao_banco,
                 "email_finalizacao_enviado": False,
                 "observacao_final": observacao_final,
-                "numero_manifesto": numero_manifesto_val, 
                 "imagem_finalizacao_url": imagem_url_finalizacao
             }).eq("id", ocorr["id"]).execute()
             
@@ -1657,14 +1623,8 @@ if st.session_state.aba_ativa == "aba2":
     with col_botao:
         atualizar_abertas = st.button("🔄 Atualizar", key="btn_atualizar_abertas", use_container_width=True)
 
-    # Se o botão "Atualizar" foi clicado, limpa o cache da função específica
-    if atualizar_abertas:
-        carregar_ocorrencias_abertas.clear() # Limpa o cache SOMENTE desta função
-        st.session_state.ocorrencias_abertas = carregar_ocorrencias_abertas() # Força o recarregamento
-
-    # Se não houver ocorrências na sessão (primeira carga ou após rerun), ou se o cache expirou pelo ttl,
-    # ele será recarregado automaticamente pela função cacheada.
-    if "ocorrencias_abertas" not in st.session_state or atualizar_abertas:
+    if atualizar_abertas or "ocorrencias_abertas" not in st.session_state:
+        st.cache_data.clear()
         st.session_state.ocorrencias_abertas = carregar_ocorrencias_abertas()
 
     ocorrencias_abertas = st.session_state.get("ocorrencias_abertas", [])
@@ -1783,9 +1743,8 @@ if st.session_state.aba_ativa == "aba2":
                         data_finalizacao_manual = st.session_state[chave_data]
                         hora_finalizacao_manual = st.session_state[chave_hora]
 
-                        complemento = st.text_input("Complementar não Fiscal", key=f"complemento_final_{safe_idx}")
-                        numero_manifesto = st.text_input("N° do Manifesto", key=f"numero_manifesto_final_{safe_idx}")
-                        observacao_final = st.text_input("Observação", key=f"observacao_final_{safe_idx}")
+                        complemento = st.text_area("Complementar não Fiscal", key=f"complemento_final_{safe_idx}")
+                        observacao_final = st.text_area("Observação", key=f"observacao_final_{safe_idx}")
 
                         imagem_finalizacao = st.file_uploader(
                             "📎 Anexar imagem da finalização (opcional)",
@@ -1821,8 +1780,7 @@ if st.session_state.aba_ativa == "aba2":
                                     data_finalizacao_manual,
                                     hora_finalizacao_manual,
                                     imagem_url_finalizacao,
-                                    observacao_final,
-                                    numero_manifesto
+                                    observacao_final
                                 )
 
                                 if sucesso:
@@ -1842,8 +1800,7 @@ if st.session_state.aba_ativa == "aba2":
 
 # =============================== 
 #    FUNÇÃO CARREGAR FINALIZADAS 
-# ===============================  
-@st.cache_data(ttl=420)      
+# ===============================        
 def carregar_ocorrencias_finalizadas():
     try:
         if st.session_state.is_admin:
