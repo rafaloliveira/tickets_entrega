@@ -521,6 +521,7 @@ def inserir_ocorrencia_supabase(dados):
         
         response = supabase.table("ocorrencias").insert([{
             "id": dados["id"],
+            "numero_ticket": dados["numero_ticket"],
             "nota_fiscal": dados["nota_fiscal"],
             "cliente": dados["cliente"],
             "focal": dados["focal"],
