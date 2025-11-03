@@ -429,12 +429,10 @@ abas = abas_admin if st.session_state.is_admin else abas_usuario
 
 current_user_abas_map = abas_admin if st.session_state.is_admin else abas_usuario
 # --- INICIALIZAÇÃO DA ABA ATIVA (AGORA DE FORMA MAIS ROBUSTA) ---
+# Só define a aba_ativa se ainda não existir
 if "aba_ativa" not in st.session_state:
-    # Garante que aba_ativa sempre inicie na primeira aba do usuário logado
-    if current_user_abas_map:
-        st.session_state.aba_ativa = list(current_user_abas_map.values())[0]
-    else: # Fallback caso o dicionário de abas esteja vazio (improvável, mas seguro)
-        st.session_state.aba_ativa = "aba1" # Valor padrão mais genérico
+    # Mantém a aba atual após refresh (como 'Ocorrências em Aberto')
+    st.session_state.aba_ativa = "aba1"  # valor inicial apenas na 1ª execução
 
 
 # Mapeia o nome da aba ativa para o índice correspondente no rádio
