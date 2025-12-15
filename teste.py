@@ -1678,56 +1678,52 @@ def finalizar_ocorrencia(ocorr, complemento, data_finalizacao_manual, hora_final
 
 
 # =========================
-#     ABA 2 - EM ABERTO (COM FILTRO POR FOCAL)
+#     ABA 2 - EM ABERTO (COM CONTAGEM DINÂMICA)
 # =========================
 if st.session_state.aba_ativa == "aba2":
+    # 1. Definimos o Layout do Cabeçalho
     col_titulo, col_botao = st.columns([5, 1])
-    with col_titulo:
-        st.header("Ocorrências em Aberto")
+
+    # Botão de Atualizar (na direita)
     with col_botao:
-        atualizar_abertas = st.button("🔄 Atualizar", key="btn_atualizar_abertas", use_container_width=True)
+        if st.button("🔄 Atualizar", key="btn_atualizar_abertas", use_container_width=True):
+            carregar_ocorrencias_abertas.clear() 
+            st.session_state.ocorrencias_abertas = carregar_ocorrencias_abertas()
 
-    # Se o botão "Atualizar" foi clicado, limpa o cache da função específica
-    if atualizar_abertas:
-        carregar_ocorrencias_abertas.clear() # Limpa o cache SOMENTE desta função
-        st.session_state.ocorrencias_abertas = carregar_ocorrencias_abertas() # Força o recarregamento
+    # CRUCIAL: Criamos um espaço vazio (placeholder) onde o título vai ficar.
+    # Vamos preencher isso SÓ DEPOIS de filtrar os dados para ter o número certo.
+    titulo_placeholder = col_titulo.empty()
 
-    # Se não houver ocorrências na sessão (primeira carga ou após rerun), ou se o cache expirou pelo ttl,
-    # ele será recarregado automaticamente pela função cacheada.
-    if "ocorrencias_abertas" not in st.session_state or atualizar_abertas:
+    # 2. Carregamento de Dados
+    if "ocorrencias_abertas" not in st.session_state:
         st.session_state.ocorrencias_abertas = carregar_ocorrencias_abertas()
 
     ocorrencias_abertas = st.session_state.get("ocorrencias_abertas", [])
 
-    # ⏱️ Auto refresh a cada 7 minutos (420.000 ms)
+    # ⏱️ Auto refresh a cada 7 minutos
     st_autorefresh(interval=7 * 60 * 1000, key="auto_refresh_abertas")
 
-    # 🚫 Garantir que não envie múltiplos e-mails no mesmo ciclo
-    
-        # Executa a verificação de ocorrências a cada ciclo
+    # 📧 Notificações (roda em segundo plano)
     resultados_emails = notificar_ocorrencias_abertas()
-
     for resultado in resultados_emails:
         if resultado["status"] == "sucesso":
             st.toast(f"📧 {resultado['mensagem']}")
-        else:
-            st.warning(f"⚠️ Erro para {resultado.get('cliente', 'cliente desconhecido')}: {resultado['mensagem']}")
-
-
-
-
-    # Filtro por Focal
+    
+    # 3. Filtros
+    # Prepara lista de focais únicos
     lista_focais = sorted(set(
         (ocorr.get('focal') or 'Sem Focal').strip()
         for ocorr in ocorrencias_abertas
     ))
 
+    # Renderiza o Selectbox
     focal_selecionado = st.selectbox(
         "🔎 Filtrar por Focal:",
         options=["Todos"] + lista_focais,
         index=0
     )
 
+    # 4. Aplica o Filtro
     if focal_selecionado != "Todos":
         ocorrencias_filtradas = [
             ocorr for ocorr in ocorrencias_abertas
@@ -1736,14 +1732,19 @@ if st.session_state.aba_ativa == "aba2":
     else:
         ocorrencias_filtradas = ocorrencias_abertas
 
-    # ✅ EXIBIÇÃO DOS TICKETS (corretamente posicionado fora do filtro)
+    # 5. ATUALIZA O TÍTULO COM O TOTAL DO FILTRO
+    qtd_exibida = len(ocorrencias_filtradas)
+    titulo_placeholder.header(f"Ocorrências em Aberto ({qtd_exibida})")
+
+    # 6. Exibição dos Cards
     if not ocorrencias_filtradas:
-        st.info("ℹ️ Nenhuma ocorrência aberta no momento para esse filtro.")
+        st.info("ℹ️ Nenhuma ocorrência encontrada para este filtro.")
     else:
         num_colunas = 4
         colunas = st.columns(num_colunas)
 
         for idx, ocorr in enumerate(ocorrencias_filtradas):
+            # Lógica de Cores e Status
             status = "Data manual ausente"
             cor = "gray"
             abertura_manual_formatada = "Não informada"
@@ -1759,15 +1760,15 @@ if st.session_state.aba_ativa == "aba2":
                     else:
                         status = "Erro"
                 except Exception as e:
-                    st.error(f"Erro na data/hora manual da NF {ocorr.get('nota_fiscal', '-')}: {e}")
                     status = "Erro"
 
+            # Renderiza o Card
             with colunas[idx % num_colunas]:
                 safe_idx = f"{idx}_{ocorr.get('nota_fiscal', '')}"
                 email_enviado = ocorr.get('email_abertura_enviado', False)
                 imagem_abertura_url = ocorr.get('imagem_url', '')
-                imagem_finalizacao_url = ocorr.get('imagem_finalizacao_url', '')
-
+                
+                # HTML do Card
                 st.markdown(
                     f"""
                     <div style='background-color:{cor};padding:10px;border-radius:10px;color:white;
@@ -1792,7 +1793,7 @@ if st.session_state.aba_ativa == "aba2":
                     unsafe_allow_html=True
                 )
 
-                # 🔥 Botão ou formulário de finalização
+                # Botão/Formulário de Finalizar
                 if st.session_state.get("ticket_em_finalizacao") == safe_idx:
                     with st.form(f"form_{safe_idx}"):
                         chave_data = f"data_final_{safe_idx}"
@@ -1800,73 +1801,48 @@ if st.session_state.aba_ativa == "aba2":
 
                         if chave_data not in st.session_state or not isinstance(st.session_state[chave_data], date):
                             st.session_state[chave_data] = obter_data_hora_atual_brasil().date()
-
                         if chave_hora not in st.session_state or not isinstance(st.session_state[chave_hora], time):
                             st.session_state[chave_hora] = obter_data_hora_atual_brasil().time()
 
                         col_data, col_hora = st.columns(2)
-                        with col_data:
-                            st.date_input("Data Finalização", key=chave_data, format="DD/MM/YYYY")
-                        with col_hora:
-                            st.time_input("Hora Finalização", key=chave_hora)
+                        with col_data: st.date_input("Data Final", key=chave_data, format="DD/MM/YYYY")
+                        with col_hora: st.time_input("Hora Final", key=chave_hora)
 
-                        data_finalizacao_manual = st.session_state[chave_data]
-                        hora_finalizacao_manual = st.session_state[chave_hora]
+                        complemento = st.text_input("Complementar", key=f"complemento_final_{safe_idx}")
+                        numero_manifesto = st.text_input("N° Manifesto", key=f"numero_manifesto_final_{safe_idx}")
+                        observacao_final = st.text_input("Obs Final", key=f"observacao_final_{safe_idx}")
+                        imagem_finalizacao = st.file_uploader("Anexar img finalização", type=["png", "jpg", "jpeg"], key=f"imagem_finalizacao_{safe_idx}")
 
-                        complemento = st.text_input("Complementar não Fiscal", key=f"complemento_final_{safe_idx}")
-                        numero_manifesto = st.text_input("N° do Manifesto", key=f"numero_manifesto_final_{safe_idx}")
-                        observacao_final = st.text_input("Observação", key=f"observacao_final_{safe_idx}")
-
-                        imagem_finalizacao = st.file_uploader(
-                            "📎 Anexar imagem da finalização (opcional)",
-                            type=["png", "jpg", "jpeg"],
-                            key=f"imagem_finalizacao_{safe_idx}"
-                        )
-
-                        if st.form_submit_button("Finalizar"):
+                        if st.form_submit_button("Concluir Finalização"):
                             if not complemento.strip():
-                                st.warning("❌ O campo 'Complementar' é obrigatório.")
+                                st.warning("Complementar obrigatório.")
                             else:
-                                st.toast("📤 Enviando e-mail de finalização...")
-                                st.toast("✅ Ticket sendo finalizado...")
-
+                                st.toast("Finalizando...")
                                 imagem_url_finalizacao = ""
                                 if imagem_finalizacao:
                                     try:
-                                        nome_arquivo = f"{ocorr['id']}_finalizacao_{limpar_nome_arquivo(imagem_finalizacao.name)}"
+                                        nome_arquivo = f"{ocorr['id']}_final_{limpar_nome_arquivo(imagem_finalizacao.name)}"
                                         supabase.storage.from_("imagens-finalizacao").upload(
-                                            nome_arquivo,
-                                            imagem_finalizacao.read(),
-                                            file_options={"content-type": imagem_finalizacao.type}
+                                            nome_arquivo, imagem_finalizacao.read(), file_options={"content-type": imagem_finalizacao.type}
                                         )
                                         imagem_url_finalizacao = supabase.storage.from_("imagens-finalizacao").get_public_url(nome_arquivo)
-                                    except Exception as e:
-                                        st.warning(f"⚠️ Falha ao enviar imagem: {e}")
-
-                                st.write("🧪 Será salvo:", data_finalizacao_manual.strftime("%d-%m-%Y"), hora_finalizacao_manual.strftime("%H:%M:%S"))
+                                    except: pass
 
                                 sucesso, mensagem = finalizar_ocorrencia(
-                                    ocorr,
-                                    complemento,
-                                    data_finalizacao_manual,
-                                    hora_finalizacao_manual,
-                                    imagem_url_finalizacao,
-                                    observacao_final,
-                                    numero_manifesto
+                                    ocorr, complemento, st.session_state[chave_data], st.session_state[chave_hora],
+                                    imagem_url_finalizacao, observacao_final, numero_manifesto
                                 )
 
                                 if sucesso:
-                                    st.success("✅ Ticket finalizado com sucesso!")
+                                    st.success("Finalizado!")
                                     st.session_state.ticket_em_finalizacao = None
-                                    tm.sleep(1.5)
+                                    tm.sleep(1)
                                     st.rerun()
-                                else:
-                                    st.warning(f"⚠️ A finalização falhou: {mensagem}")
+                                else: st.error(mensagem)
                 else:
                     if st.button("Finalizar", key=f"btn_finalizar_{safe_idx}"):
                         st.session_state.ticket_em_finalizacao = safe_idx
                         st.rerun()
-
 
 
 
