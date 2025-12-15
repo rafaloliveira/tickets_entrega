@@ -690,51 +690,20 @@ def inserir_cidade(cidade):
         return True, "Cidade cadastrada com sucesso!"
     except Exception as e:
         return False, f"Erro ao cadastrar cidade: {e}"
-#---------------------------------------------------------------------------------------------------------
-def inserir_cliente(novo_cliente, focal, receber_emails, email_principal, email_copia, cnpj):
-    """Insere um novo cliente no Supabase (Com CNPJ)"""
-    try:
-        # Verifica duplicidade
-        check = supabase.table("clientes").select("cliente").eq("cliente", novo_cliente).execute()
-        if check.data and len(check.data) > 0:
-            return False, f"O cliente '{novo_cliente}' já está cadastrado."
 
-        dados = {
-            "cliente": novo_cliente,
+def inserir_cliente(cliente, focal, enviar_email, email_principal, email_copia):
+    """Insere um novo cliente no Supabase."""
+    try:
+        response = supabase.table("clientes").insert({
+            "cliente": cliente,
             "focal": focal,
-            "receber_emails": receber_emails,
             "enviar_para_email": email_principal,
             "email_copia": email_copia,
-            "cnpj": cnpj  # Novo campo
-        }
-        supabase.table("clientes").insert(dados).execute()
-        return True, f"Cliente '{novo_cliente}' cadastrado com sucesso!"
+            "receber_emails": enviar_email
+        }).execute()
+        return True, "Cliente cadastrado com sucesso!"
     except Exception as e:
-        return False, f"Erro ao inserir cliente: {e}"
-#---------------------------------------------------------------------------------------------------------
-# --- NOVAS FUNÇÕES PARA ATUALIZAR DADOS (Coloque abaixo das funções de inserir) ---
-
-def atualizar_motorista(id_motorista, novo_nome):
-    try:
-        supabase.table("motoristas").update({"nome": novo_nome}).eq("id", id_motorista).execute()
-        return True, "Motorista atualizado com sucesso!"
-    except Exception as e:
-        return False, f"Erro ao atualizar: {e}"
-#---------------------------------------------------------------------------------------------------------
-def atualizar_cidade(id_cidade, nova_cidade):
-    try:
-        supabase.table("cidades").update({"cidade": nova_cidade}).eq("id", id_cidade).execute()
-        return True, "Cidade atualizada com sucesso!"
-    except Exception as e:
-        return False, f"Erro ao atualizar: {e}"
-#---------------------------------------------------------------------------------------------------------
-def atualizar_cliente(id_cliente, dados_update):
-    try:
-        supabase.table("clientes").update(dados_update).eq("id", id_cliente).execute()
-        return True, "Cliente atualizado com sucesso!"
-    except Exception as e:
-        return False, f"Erro ao atualizar: {e}"
-#---------------------------------------------------------------------------------------------------------
+        return False, f"Erro ao cadastrar cliente: {e}"
 
 def atualizar_tempo_envio_email(minutos):
     """Atualiza o tempo de envio de e-mail na configuração."""
@@ -2349,267 +2318,176 @@ if st.session_state.aba_ativa == "aba8":
 #     ABA 7 - CADASTROS
 # =========================
 if st.session_state.aba_ativa == "aba7":
-    st.header("Cadastros Gerais")
-    
-    # Menu de Navegação Persistente
-    menu_cadastro = st.radio(
-        "Selecione o cadastro:",
-        ["Motoristas", "Cidades", "Clientes", "Configurações"],
-        horizontal=True,
-        key="menu_nav_cadastros"
+    st.header("Cadastros")
+
+    cadastro_tab1, cadastro_tab2, cadastro_tab3, cadastro_tab4 = st.tabs(
+        ["Motoristas", "Cidades", "Clientes", "Configurações de E-mail"]
     )
-    st.markdown("---")
 
-    # =========================================================
-    # 1. GERENCIAR MOTORISTAS
-    # =========================================================
-    if menu_cadastro == "Motoristas":
-        st.subheader("Gerenciar Motoristas")
-        modo_mot = st.radio("Ação:", ["Cadastrar Novo", "Editar Existente"], horizontal=True, key="radio_mot")
+    
+    # Aba de Cadastro de Motoristas
+    with cadastro_tab1:
+        st.subheader("Cadastro de Motoristas")
         
-        # --- NOVO MOTORISTA ---
-        if modo_mot == "Cadastrar Novo":
-            with st.form("form_mot_novo", clear_on_submit=True):
-                nm = st.text_input("Nome do Motorista")
-                if st.form_submit_button("Salvar Novo Motorista"):
-                    if nm:
-                        try:
-                            supabase.table("motoristas").insert({"motorista": nm}).execute()
-                            st.success(f"Motorista '{nm}' cadastrado!")
-                            carregar_motoristas_supabase.clear()
-                        except Exception as e:
-                            st.error(f"Erro ao cadastrar: {e}")
-                    else: st.warning("Digite o nome.")
-        
-        # --- EDITAR MOTORISTA ---
-        else:
-            try:
-                res = supabase.table("motoristas").select("*").range(0, 5000).execute()
-                lista_mot = res.data if res.data else []
-            except Exception as e:
-                st.error(f"Erro de conexão: {e}")
-                lista_mot = []
+        # Formulário para cadastro de motoristas
+        with st.form("form_cadastro_motorista", clear_on_submit=True):
+            motorista_nome = st.text_input("Nome do Motorista (LETRAS MAIÚSCULAS)", key="motorista_nome")
             
-            lista_mot = [m for m in lista_mot if m.get('motorista')]
-            
-            if not lista_mot:
-                st.info("Nenhum motorista encontrado.")
+            submit_motorista = st.form_submit_button("Cadastrar Motorista")
+        
+        # Processamento do formulário de motoristas
+        if submit_motorista:
+            if not motorista_nome:
+                st.error("❌ Por favor, informe o nome do motorista.")
+            elif not validar_texto_maiusculo(motorista_nome):
+                st.error("❌ O nome do motorista deve estar em LETRAS MAIÚSCULAS.")
             else:
-                lista_mot = sorted(lista_mot, key=lambda x: x['motorista'])
-                dict_mot = {m['motorista']: m['id'] for m in lista_mot}
-                
-                st.caption(f"Total: {len(lista_mot)} motoristas")
-                
-                # AJUSTE AQUI: index=None faz começar vazio
-                nome_sel = st.selectbox(
-                    "Selecione o Motorista:", 
-                    options=list(dict_mot.keys()), 
-                    index=None, 
-                    placeholder="Selecione...",
-                    key="sel_mot_edit"
-                )
-                
-                # Só mostra o formulário SE tiver selecionado alguém
-                if nome_sel:
-                    with st.form("form_mot_edit"):
-                        novo_nome_mot = st.text_input("Editar Nome:", value=nome_sel)
-                        
-                        if st.form_submit_button("Salvar Alterações"):
-                            id_alvo = dict_mot[nome_sel]
-                            try:
-                                supabase.table("motoristas").update({"motorista": novo_nome_mot}).eq("id", id_alvo).execute()
-                                st.success("Motorista atualizado!")
-                                carregar_motoristas_supabase.clear()
-                                tm.sleep(1)
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Erro ao atualizar: {e}")
-
-    # =========================================================
-    # 2. GERENCIAR CIDADES
-    # =========================================================
-    elif menu_cadastro == "Cidades":
-        st.subheader("Gerenciar Cidades")
-        modo_cid = st.radio("Ação:", ["Cadastrar Nova", "Editar Existente"], horizontal=True, key="radio_cid")
-
-        if modo_cid == "Cadastrar Nova":
-            with st.form("form_cid_novo", clear_on_submit=True):
-                nc = st.text_input("Nome da Cidade")
-                if st.form_submit_button("Salvar Nova Cidade"):
-                    if nc:
-                        suc, msg = inserir_cidade(nc)
-                        if suc: 
-                            st.success(msg)
-                            carregar_cidades_supabase.clear()
-                        else: st.error(msg)
-                    else: st.warning("Digite a cidade.")
+                sucesso, mensagem = inserir_motorista(motorista_nome)
+                if sucesso:
+                    st.success(mensagem)
+                    # Recarregar a lista de motoristas
+                    motoristas = carregar_motoristas_supabase()
+                else:
+                    st.error(mensagem)
+        
+        # Exibir lista de motoristas cadastrados
+        st.subheader("Motoristas Cadastrados")
+        motoristas_atuais = carregar_motoristas_supabase()
+        if motoristas_atuais:
+            for motorista in motoristas_atuais:
+                st.text(motorista)
         else:
-            try:
-                res = supabase.table("cidades").select("*").execute()
-                lista_cid = sorted(res.data, key=lambda x: x.get('cidade', '')) if res.data else []
-            except: lista_cid = []
-
-            if not lista_cid:
-                st.info("Nenhuma cidade cadastrada.")
+            st.info("Nenhum motorista cadastrado.")
+    
+    # Aba de Cadastro de Cidades
+    with cadastro_tab2:
+        st.subheader("Cadastro de Cidades")
+        
+        # Formulário para cadastro de cidades
+        with st.form("form_cadastro_cidade", clear_on_submit=True):
+            cidade_nome = st.text_input("Nome da Cidade", key="cidade_nome")
+            
+            submit_cidade = st.form_submit_button("Cadastrar Cidade")
+        
+        # Processamento do formulário de cidades
+        if submit_cidade:
+            if not cidade_nome:
+                st.error("❌ Por favor, informe o nome da cidade.")
             else:
-                dict_cid = {c['cidade']: c['id'] for c in lista_cid if c.get('cidade')}
+                sucesso, mensagem = inserir_cidade(cidade_nome)
+                if sucesso:
+                    st.success(mensagem)
+                    # Recarregar a lista de cidades
+                    cidades = carregar_cidades_supabase()
+                else:
+                    st.error(mensagem)
+        
+        # Exibir lista de cidades cadastradas
+        st.subheader("Cidades Cadastradas")
+        cidades_atuais = carregar_cidades_supabase()
+        if cidades_atuais:
+            for cidade in cidades_atuais:
+                st.text(cidade)
+        else:
+            st.info("Nenhuma cidade cadastrada.")
+    
+    # Aba de Cadastro de Clientes
+    with cadastro_tab3:
+        st.subheader("Cadastro de Clientes")
+        
+        # Carregar lista de focais
+        focal = carregar_focal_supabase()
+        
+        # Formulário para cadastro de clientes
+        with st.form("form_cadastro_cliente", clear_on_submit=True):
+            cliente_nome = st.text_input("Nome do Cliente (LETRAS MAIÚSCULAS)", key="cliente_nome")
+            
+            # Seleção de focal
+            focal_selecionado = st.selectbox("Focal Responsável", options=focal, index=None, key="focal_cliente")
+            
+            # Checkbox para receber e-mails
+            receber_emails = st.checkbox("Cliente deve receber e-mails de abertura/finalização", key="receber_emails")
+            
+            # Campos de e-mail
+            email_principal = st.text_input("E-mail Principal", key="email_principal")
+            email_copia = st.text_input("E-mails em Cópia (separados por ;)", key="email_copia")
+            
+            submit_cliente = st.form_submit_button("Cadastrar Cliente")
+        
+        # Processamento do formulário de clientes
+        if submit_cliente:
+            erros = []
+            
+            if not cliente_nome:
+                erros.append("Por favor, informe o nome do cliente.")
+            elif not validar_texto_maiusculo(cliente_nome):
+                erros.append("O nome do cliente deve estar em LETRAS MAIÚSCULAS.")
+            
+            if not focal_selecionado:
+                erros.append("Por favor, selecione um focal responsável.")
+            
+            if receber_emails:
+                if not email_principal:
+                    erros.append("Por favor, informe o e-mail principal do cliente.")
+                elif not validar_email(email_principal):
+                    erros.append("O e-mail principal informado não é válido.")
                 
-                # AJUSTE AQUI: index=None
-                cid_sel = st.selectbox(
-                    "Selecione a Cidade:", 
-                    options=list(dict_cid.keys()), 
-                    index=None,
-                    placeholder="Selecione...",
-                    key="sel_cid_edit"
+                if email_copia and not validar_emails_multiplos(email_copia):
+                    erros.append("Um ou mais e-mails em cópia não são válidos.")
+            
+            if erros:
+                for erro in erros:
+                    st.error(f"❌ {erro}")
+            else:
+                sucesso, mensagem = inserir_cliente(
+                    cliente_nome, 
+                    focal_selecionado, 
+                    receber_emails, 
+                    email_principal if receber_emails else "", 
+                    email_copia if receber_emails else ""
                 )
                 
-                if cid_sel:
-                    with st.form("form_cid_edit"):
-                        nova_nome_cid = st.text_input("Editar Nome:", value=cid_sel)
-                        if st.form_submit_button("Salvar Alterações"):
-                            id_alvo = dict_cid[cid_sel]
-                            suc, msg = atualizar_cidade(id_alvo, nova_nome_cid)
-                            if suc:
-                                st.success(msg)
-                                tm.sleep(1)
-                                st.rerun()
-                            else: st.error(msg)
-
-    # =========================================================
-    # 3. GERENCIAR CLIENTES
-    # =========================================================
-    elif menu_cadastro == "Clientes":
-        st.subheader("Gerenciar Clientes")
+                if sucesso:
+                    st.success(mensagem)
+                    # Recarregar a lista de clientes
+                    df_clientes = carregar_clientes_supabase()
+                    clientes = df_clientes["cliente"].tolist()
+                else:
+                    st.error(mensagem)
         
-        lista_focais_disp = carregar_focal_supabase()
-        opcao_gerencia = st.radio("Ação:", ["➕ Cadastrar Novo", "✏️ Editar Existente"], horizontal=True, key="radio_cli")
-        st.markdown("---")
-
-        # --- CADASTRAR NOVO ---
-        if opcao_gerencia == "➕ Cadastrar Novo":
-            with st.form("form_novo_cli", clear_on_submit=True):
-                st.markdown("##### Novo Cliente")
-                
-                col_n1, col_n2 = st.columns(2)
-                
-                # COLUNA 1
-                with col_n1:
-                    nome = st.text_input("Nome (MAIÚSCULO)")
-                    cnpj_novo = st.text_input("CNPJ")
-                    focal = st.selectbox("Focal", options=lista_focais_disp)
-                    rec_email = st.checkbox("Cliente irá Receber E-mail de Notificação?", value=False)
-
-                # COLUNA 2
-                with col_n2:
-                    email_p = st.text_input("E-mail Principal")
-                    email_c = st.text_input("Emails em Cópia (;)")
-                
-                st.markdown("---")
-                if st.form_submit_button("Salvar Novo Cliente"):
-                    erros = []
-                    if not nome: erros.append("Nome obrigatório.")
-                    elif not validar_texto_maiusculo(nome): erros.append("Nome deve ser MAIÚSCULO.")
-                    if not focal: erros.append("Selecione um focal.")
-                    
-                    if erros:
-                        for e in erros: st.error(e)
-                    else:
-                        suc, msg = inserir_cliente(nome, focal, rec_email, email_p, email_c, cnpj_novo)
-                        if suc:
-                            st.success(msg)
-                            carregar_clientes_supabase.clear()
-                            tm.sleep(1)
-                            st.rerun()
-                        else: st.error(msg)
-
-        # --- EDITAR EXISTENTE ---
-        elif opcao_gerencia == "✏️ Editar Existente":
-            try:
-                res = supabase.table("clientes").select("*").range(0, 3000).order("cliente").execute()
-                df_edit = pd.DataFrame(res.data) if res.data else pd.DataFrame()
-            except Exception as e:
-                st.error(f"Erro: {e}")
-                df_edit = pd.DataFrame()
-
-            if df_edit.empty:
-                st.warning("Sem clientes.")
-            else:
-                nomes = df_edit["cliente"].tolist()
-                
-                # AJUSTE AQUI: index=None para começar vazio
-                escolha = st.selectbox(
-                    "Selecione o Cliente para editar:", 
-                    options=nomes, 
-                    index=None, 
-                    placeholder="Selecionar..."
-                )
-                
-                # O formulário só aparece se 'escolha' não for vazio
-                if escolha:
-                    # Pega dados
-                    dados = df_edit[df_edit["cliente"] == escolha].iloc[0]
-                    
-                    with st.form("form_edit_cli"):
-                        st.info(f"Editando: {escolha}")
-                        
-                        col_e1, col_e2 = st.columns(2)
-                        
-                        # COLUNA 1
-                        with col_e1:
-                            novo_nome = st.text_input("Nome", value=dados.get("cliente", ""))
-                            
-                            val_cnpj = dados.get("cnpj")
-                            novo_cnpj = st.text_input("CNPJ", value=str(val_cnpj) if val_cnpj else "")
-
-                            focal_atual = dados.get("focal", "")
-                            idx_f = lista_focais_disp.index(focal_atual) if focal_atual in lista_focais_disp else 0
-                            novo_focal = st.selectbox("Focal", options=lista_focais_disp, index=idx_f)
-                            
-                            val_rec = dados.get("receber_emails")
-                            novo_rec = st.checkbox("Cliente irá Receber E-mail de Notificação?", value=bool(val_rec))
-                        
-                        # COLUNA 2
-                        with col_e2:
-                            val_ep = dados.get("enviar_para_email")
-                            val_ec = dados.get("email_copia")
-                            novo_ep = st.text_input("E-mail Principal", value=str(val_ep) if val_ep else "")
-                            novo_ec = st.text_input("Emails em Cópia (;)", value=str(val_ec) if val_ec else "")
-                        
-                        st.markdown("---")
-                        if st.form_submit_button("Salvar Alterações"):
-                            dados_up = {
-                                "cliente": novo_nome,
-                                "cnpj": novo_cnpj,
-                                "focal": novo_focal,
-                                "receber_emails": novo_rec,
-                                "enviar_para_email": novo_ep,
-                                "email_copia": novo_ec
-                            }
-                            suc, msg = atualizar_cliente(dados['id'], dados_up)
-                            if suc:
-                                st.success(msg)
-                                carregar_clientes_supabase.clear()
-                                tm.sleep(1)
-                                st.rerun()
-                            else: st.error(msg)
+        # Exibir lista de clientes cadastrados
+        st.subheader("Clientes Cadastrados")
+        df_clientes_atuais = carregar_clientes_supabase()
+        if not df_clientes_atuais.empty:
+            st.dataframe(df_clientes_atuais)
+        else:
+            st.info("Nenhum cliente cadastrado.")
+    
+    # Aba de Configurações de E-mail
+    with cadastro_tab4:
+        st.subheader("Configurações de Tempo de Envio de E-mail")
         
-        # TABELA GERAL
-        st.markdown("### Lista de Clientes")
-        df_view = carregar_clientes_supabase()
-        if not df_view.empty:
-            cols_view = ["cliente", "cnpj", "focal", "enviar_para_email"]
-            cols_reais = [c for c in cols_view if c in df_view.columns]
-            st.dataframe(df_view[cols_reais], use_container_width=True)
-
-    # =========================================================
-    # 4. CONFIGURAÇÕES
-    # =========================================================
-    elif menu_cadastro == "Configurações":
-        st.subheader("Configurações de Tempo de Envio")
+        # Carregar configuração atual
         tempo_atual = carregar_tempo_envio_email()
-        tempo_envio = st.slider("Minutos para alerta:", 1, 60, value=tempo_atual)
         
+        # Slider para configurar o tempo de envio
+        tempo_envio = st.slider(
+            "Tempo de envio dos e-mails (minutos)",
+            min_value=1,
+            max_value=60,
+            value=tempo_atual,
+            step=1,
+            key="tempo_envio_slider"
+        )
+        
+        # Botão para salvar configuração
         if st.button("Salvar Configuração"):
-            suc, msg = atualizar_tempo_envio_email(tempo_envio)
-            if suc: st.success(msg)
-            else: st.error(msg)
+            sucesso, mensagem = atualizar_tempo_envio_email(tempo_envio)
+            if sucesso:
+                st.success(mensagem)
+            else:
+                st.error(mensagem)
+        
+        st.info(f"Configuração atual: E-mails serão enviados após {tempo_atual} minutos.")
+
+        
