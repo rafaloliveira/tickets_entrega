@@ -1,3 +1,9 @@
+# funcionando com envio de e-mail 17-06
+# versão completa com todas as funcionalidades solicitadas
+# versão liberada para usuário com correção de fuso horário e uso exclusivo de datas manuais
+# envio de email atraves do gmail
+
+
 import streamlit as st
 import base64
 st.set_page_config(
@@ -10,7 +16,6 @@ import os
 import re
 import time as tm
 import uuid
-import base64
 import html
 import bcrypt
 import socket
@@ -30,44 +35,29 @@ from dotenv import load_dotenv
 
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
-import streamlit as st
-from streamlit_autorefresh import st_autorefresh
 from streamlit_cookies_manager import EncryptedCookieManager
 
 from supabase import create_client, Client as SupabaseClient
 
 load_dotenv()
-
-# ====================================================================
-# 1. CONFIGURAÇÕES GLOBAIS E CHAVES (EMAIL, SUPABASE, FUSO HORÁRIO)
-# ====================================================================
-
-# --- CONFIGURAÇÕES DE E-MAIL DO GMAIL ---
+# --- CONFIGURAÇÕES DE E-MAIL DA KINGHOST ---
+# Estas configurações podem ser movidas para um arquivo .env se preferir
 
 #EMAIL_REMETENTE = "ticketclicklogtransportes@gmail.com"
 #EMAIL_SENHA = "hlossktfkqlsxepo"
+# --- CONFIGURAÇÕES DE E-MAIL DO GMAIL ---
+EMAIL_REMETENTE = "ticketclicklogtransportes02@gmail.com"
 
+# Coloque a senha de 16 letras que você acabou de gerar (sem os espaços)
+EMAIL_SENHA = "xqpdtzfivtebfgvs" 
 
-
-#EMAIL_REMETENTE = "ticketclicklogtransportes02@gmail.com"
-#EMAIL_SENHA = "xqpdtzfivtebfgvs" # Coloque a senha de 16 letras que você acabou de gerar (sem os espaços)
-#SMTP_HOST = "smtp.gmail.com"
-#SMTP_PORT = 587
-#socket.setdefaulttimeout(30)  # 10 segundos de timeout
-
-
-#-------------------------------------
-# envio de email pela kinghost
-#------------------------------------
-EMAIL_REMETENTE = "ticket@clicklogtransportes.com.br"
-EMAIL_SENHA = "Tkt@335clk" # Coloque a senha de 16 letras que você acabou de gerar (sem os espaços)
-SMTP_HOST = "smtp.kinghost.net"
+SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 587
-socket.setdefaulttimeout(30)  # 10 segundos de timeout
-
-#-----------------------------------------
+# Configurar timeout para operações de socket
+socket.setdefaulttimeout(10)  # 10 segundos de timeout
 
 # --- DEFINIÇÃO DO FUSO HORÁRIO BRASILEIRO ---
+# Usar este fuso horário em todas as operações de data/hora
 FUSO_HORARIO_BRASIL = pytz.timezone("America/Sao_Paulo")
 
 # --- SETUP DO COOKIE MANAGER ---
@@ -78,14 +68,6 @@ cookies = EncryptedCookieManager(
 if not cookies.ready():
     st.stop()
 
-# --- CONEXÃO COM O SUPABASE ---
-url = "https://vismjxhlsctehpvgmata.supabase.co"  # ✅ sua URL real, já sem o '>' no meio
-key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZpc21qeGhsc2N0ZWhwdmdtYXRhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDY1NzA4NTIsImV4cCI6MjA2MjE0Njg1Mn0.zTjSWenfuVJTIixq2RThSUpqcHGfZWP2xkFDU3USPb0"  # ✅ sua chave real (evite expor em público!)
-supabase = create_client(url, key)
-
-# ====================================================================
-# 2. FUNÇÕES AUXILIARES GERAIS (COOKIES, IMAGENS, SEGURANÇA)
-# ====================================================================
 
 # --- Função para verificar se o cookie expirou ---
 def is_cookie_expired(expiry_time_str):
@@ -95,6 +77,9 @@ def is_cookie_expired(expiry_time_str):
         return False
     return datetime.now(timezone.utc) > expiry_time
 
+
+import base64
+
 @st.cache_data
 def get_base64_image_cached(image_path):
     with open(image_path, "rb") as img_file:
@@ -103,22 +88,389 @@ def get_base64_image_cached(image_path):
 img_base64_logo_principal = get_base64_image_cached("assets/logo_fundo_branco.jpg")
 img_base64_fa = get_base64_image_cached("assets/Logo FA.png")
 
+
+# --- Função de autenticação ---
+def autenticar_usuario(nome_usuario, senha):
+    try:
+        dados_usuario = supabase.table("usuarios").select("*").eq("nome_usuario", nome_usuario).execute()
+
+        if dados_usuario.data:
+            usuario = dados_usuario.data[0]
+            if verificar_senha(senha, usuario["senha_hash"]):
+                return usuario
+        return None
+    except Exception:
+        return None
+
+# --- CONEXÃO COM O SUPABASE ---
+url = "https://vismjxhlsctehpvgmata.supabase.co"  # ✅ sua URL real, já sem o '>' no meio
+key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZpc21qeGhsc2N0ZWhwdmdtYXRhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDY1NzA4NTIsImV4cCI6MjA2MjE0Njg1Mn0.zTjSWenfuVJTIixq2RThSUpqcHGfZWP2xkFDU3USPb0"  # ✅ sua chave real (evite expor em público!)
+supabase = create_client = create_client(url, key)
+
+
 # Função para hash de senha
 def hash_senha(senha):
     return bcrypt.hashpw(senha.encode(), bcrypt.gensalt()).decode()
 
+# Criar usuário via Supabase Auth e tabela `usuarios`
+# Criar usuário direto na tabela 'usuarios' (sem Supabase Auth)
+
 # Função para verificar se a senha fornecida corresponde ao hash
 def verificar_senha(senha_fornecida, senha_hash):
     return bcrypt.checkpw(senha_fornecida.encode(), senha_hash.encode())
+    
+usuario_logado = "admin"  # Exemplo de nome de usuário do admin logado
+dados_usuario = {
+    "nome_usuario": "admin",
+    "senha_hash": "$2b$12$OqjiW19Pjd9.eGnFfmJSrW.TqX/pq6RmPjbsHbuZ56MzeP3dNKuyq"  # Exemplo de senha já hashada (gerada com bcrypt)
+}
+    
+# Função de autenticação simples com mensagens
+def autenticar_usuario(nome_usuario, senha):
+    try:
+        dados = supabase.table("usuarios").select("*").eq("nome_usuario", nome_usuario).execute()
 
-# Função para limpar caracteres de nomes de arquivos (para URLs)
-def limpar_nome_arquivo(nome_original):
-    nome_limpo = re.sub(r'[^a-zA-Z0-9_.-]', '_', nome_original)
-    return nome_limpo
+        if dados.data:
+            usuario = dados.data[0]
+            if verificar_senha(senha, usuario["senha_hash"]):
+                st.success("✅ Logado com sucesso!")
+                return usuario
+        st.error("🛑 Usuário ou senha incorretos.")
+        return None
 
-# ====================================================================
-# 3. FUNÇÕES AUXILIARES DE DATA E HORA COM FUSO HORÁRIO
-# ====================================================================
+    except Exception as e:
+        st.error("Erro ao autenticar.")
+        return None
+
+
+
+# --- Interface de Login ---
+
+
+
+
+def login():
+    login_cookie = cookies.get("login")
+    username_cookie = cookies.get("username")
+    is_admin_cookie = cookies.get("is_admin")
+    expiry_time_cookie = cookies.get("expiry_time")
+    classe_cookie = cookies.get("classe")  # Pega a classe do cookie
+
+    # Verifica se já está logado via cookie e se o cookie não expirou
+    if login_cookie and username_cookie and not is_cookie_expired(expiry_time_cookie):
+        st.session_state.login = True
+        st.session_state.username = username_cookie
+        st.session_state.is_admin = is_admin_cookie == "True"
+        st.session_state.classe = classe_cookie
+        return  # Sai da função, usuário já logado
+
+
+
+   
+
+    # --- CSS responsivo ---
+    st.markdown(
+        f"""
+        <style>
+        .login-header {{
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px 0;
+            margin-bottom: 30px;
+        }}
+
+        .login-header img {{
+            max-width: 500px;
+            height: auto;
+        }}
+
+        .login-title {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            color: #666;
+            font-size: 1.8rem; /* escala com zoom */
+            margin-top: 15px;
+        }}
+
+        .login-title img {{
+            width: 60px;
+            height: 30px;
+        }}
+        </style>
+
+        <div class="login-header">
+            <img src="data:image/png;base64,{img_base64_logo_principal}" alt="Logo Principal">
+            <div class="login-title">
+                Sistema de Monitoramento ClickLog Transportes by F4Stay
+                <img src="data:image/png;base64,{img_base64_fa}" alt="Logo FA">
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # Linha 2 → só para o formulário de login
+    form_col1, form_col2, form_col3 = st.columns([0.6, 1, 0.6])
+    with form_col2:
+        st.markdown("#### 🔐 Login")
+        nome = st.text_input("Usuário").strip()
+        senha = st.text_input("Senha", type="password").strip()
+
+        if st.button("Entrar"):
+            usuario = autenticar_usuario(nome, senha)
+            if usuario:
+                # Armazena as informações no cookie
+                cookies["login"] = "True"
+                cookies["username"] = usuario["nome_usuario"]
+                cookies["is_admin"] = str(usuario.get("is_admin", False))
+                cookies["classe"] = usuario.get("classe", "colaborador")
+
+                # Define o tempo de expiração do cookie (24 horas)
+                expiry = datetime.now(timezone.utc) + timedelta(hours=24)
+                cookies["expiry_time"] = expiry.strftime("%Y-%m-%d %H:%M:%S")
+
+                # Armazena as informações no st.session_state
+                st.session_state.login = True
+                st.session_state.username = usuario["nome_usuario"]
+                st.session_state.is_admin = usuario.get("is_admin", False)
+                st.session_state.classe = usuario.get("classe", "colaborador")
+
+                # Verifica se o usuário precisa alterar a senha
+                if usuario.get("precisa_alterar_senha") is True:
+                    st.warning("🔐 Você deve alterar sua senha antes de continuar.")
+                    st.stop()
+
+                st.rerun()  # Atualiza a interface após login
+            else:
+                st.error("🛑 Usuário ou senha incorretos.")
+
+    st.stop()
+
+        
+    
+
+    # Linha 2 → só para o formulário (independente da imagem e do título)
+    form_col1, form_col2, form_col3 = st.columns([0.6, 1, 0.6])
+    with form_col2:
+        st.markdown("#### 🔐 Login")
+        nome = st.text_input("Usuário").strip()
+        senha = st.text_input("Senha", type="password").strip()
+
+        if st.button("Entrar"):
+            usuario = autenticar_usuario(nome, senha)
+            if usuario:
+                # Armazena as informações no cookie
+                cookies["login"] = "True"
+                cookies["username"] = usuario["nome_usuario"]
+                cookies["is_admin"] = str(usuario.get("is_admin", False))
+                cookies["classe"] = usuario.get("classe", "colaborador")
+
+                # Define o tempo de expiração do cookie (24 horas)
+                expiry = datetime.now(timezone.utc) + timedelta(hours=8)
+                cookies["expiry_time"] = expiry.strftime("%Y-%m-%d %H:%M:%S")
+
+                # Armazena as informações no st.session_state
+                st.session_state.login = True
+                st.session_state.username = usuario["nome_usuario"]
+                st.session_state.is_admin = usuario.get("is_admin", False)
+                st.session_state.classe = usuario.get("classe", "colaborador")
+
+                # Verifica se o usuário precisa alterar a senha
+                if usuario.get("precisa_alterar_senha") is True:
+                    st.warning("🔐 Você deve alterar sua senha antes de continuar.")
+                    st.stop()
+
+                st.rerun()  # Força um rerun para atualizar a interface
+            else:
+                st.error("🛑 Usuário ou senha incorretos.")
+
+    st.stop()
+
+  # Impede que o código continue sendo executado após login falhar
+
+
+
+
+
+# --- Chama login antes de qualquer coisa ---
+
+
+
+# --- Chama login antes de qualquer coisa ---
+login()
+
+# --- Cabeçalho responsivo (centralizado e rola junto com a página) ---
+if st.session_state.get("login", False):
+    import base64
+
+
+   
+  
+
+    # --- CSS ---
+    st.markdown(
+        f"""
+        <style>
+        .header-container {{
+            width: 100%;
+            background-color: dark;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 10px 0 20px 0;
+            margin-bottom: 20px;
+        }}
+
+        .header-container img {{
+            max-width: 380px;
+            height: auto;
+        }}
+
+        .header-title {{
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #666;
+            font-size: 1.3rem;  /* escala com zoom */
+            margin-top: 10px;
+        }}
+
+        .header-title img {{
+            width: 40px;
+            height: 40px;
+        }}
+        </style>
+
+        <div class="header-container">
+            <img src="data:image/png;base64,{img_base64_logo_principal}" alt="Logo Principal">
+            <div class="header-title">
+                Sistema de Monitoramento ClickLog Transportes by F4Stay
+                <img src="data:image/png;base64,{img_base64_fa}" alt="Logo FA">
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # 🔹 Linha com texto de boas-vindas e botão de logout
+    col_welcome_text, col_logout_button = st.columns([5, 0.5])
+    with col_welcome_text:
+        st.markdown(f"👋 **Bem-vindo, {st.session_state.get('username','Usuário')}!**")
+
+    with col_logout_button:
+        if st.button("🚪 Sair"):
+            for key in ["login", "username", "is_admin", "expiry_time"]:
+                cookies[key] = ""
+            st.session_state.login = False
+            st.rerun()
+
+    st.markdown("---")  # linha divisória
+
+if "login" not in st.session_state:
+    st.session_state.login = False
+if "username" not in st.session_state:
+    st.session_state.username = None
+if "is_admin" not in st.session_state:
+    st.session_state.is_admin = False # Default para não-admin
+if "classe" not in st.session_state:
+    st.session_state.classe = "colaborador" # Classe padrão
+if "unidade_usuario" not in st.session_state:
+    st.session_state.unidade_usuario = "N/A" # Unidade padrão
+
+
+
+
+
+
+#- -- INICIALIZAÇÃO DE SESSÃO ---
+if "ocorrencias_abertas" not in st.session_state:
+    st.session_state.ocorrencias_abertas = []
+
+if "ocorrencias_finalizadas" not in st.session_state:
+    st.session_state.ocorrencias_finalizadas = []
+
+if "historico_emails" not in st.session_state:
+    st.session_state.historico_emails = []
+
+if "focal_selecionado" not in st.session_state:
+    st.session_state.focal_selecionado = None
+
+# Inicialização da configuração de tempo de envio de e-mail
+if "tempo_envio_email" not in st.session_state:
+    st.session_state.tempo_envio_email = 30  # Valor padrão: 30 minutos
+
+# =============================
+# NAVEGAÇÃO ENTRE ABAS COM RADIO
+# =============================
+
+abas_admin = {
+    "📝 Nova Ocorrência": "aba1",
+    "📌 Ocorrências em Aberto": "aba2",
+    "✅ Ocorrências Finalizadas": "aba3",
+    "📊 Configurações": "aba4",
+    "📧 Notificações por E-mail": "aba6",
+    "🔄 Cadastros": "aba7",
+    "📊 Estatística": "aba8"
+}
+
+abas_usuario = {
+    "📝 Nova Ocorrência": "aba1",
+    "📌 Ocorrências em Aberto": "aba2",
+    "✅ Ocorrências Finalizadas": "aba3",
+    "📊 Configurações": "aba4",
+    "🔄 Cadastros": "aba7",
+    "📊 Estatística": "aba8"
+}
+
+abas = abas_admin if st.session_state.is_admin else abas_usuario
+
+
+current_user_abas_map = abas_admin if st.session_state.is_admin else abas_usuario
+# --- INICIALIZAÇÃO DA ABA ATIVA (AGORA DE FORMA MAIS ROBUSTA) ---
+# Só define a aba_ativa se ainda não existir
+if "aba_ativa" not in st.session_state:
+    # Mantém a aba atual após refresh (como 'Ocorrências em Aberto')
+    st.session_state.aba_ativa = "aba1"  # valor inicial apenas na 1ª execução
+
+
+# Mapeia o nome da aba ativa para o índice correspondente no rádio
+try:
+    current_tab_name = next(key for key, value in current_user_abas_map.items() if value == st.session_state.aba_ativa)
+    initial_index = list(current_user_abas_map.keys()).index(current_tab_name)
+except (StopIteration, ValueError):
+    initial_index = 0 # Valor padrão (primeira aba) se não for encontrado (o que não deve acontecer agora)
+
+# Exibe o menu lateral
+aba_nome = st.sidebar.radio("📁 Menu", list(current_user_abas_map.keys()), key="menu_abas", index=initial_index)
+
+# Salva qual aba está ativa
+st.session_state.aba_ativa = current_user_abas_map[aba_nome]
+
+
+
+
+# Definindo a conexão com o banco de dados (ajuste com as suas credenciais)
+def get_db_connection():
+    try:
+        conn = psycopg2.connect(
+            dbname="nome_do_banco",
+            user="usuario",
+            password="senha",
+            host="host_do_banco",
+            port="porta"
+        )
+        return conn
+    except Exception as e:
+        st.error(f"Erro ao conectar ao banco de dados: {e}")
+        return None
+
+# --- FUNÇÕES DE DATA E HORA COM FUSO HORÁRIO ---
 
 def obter_data_hora_atual_brasil():
     """Retorna a data e hora atual no fuso horário do Brasil."""
@@ -156,33 +508,8 @@ def criar_datetime_manual(data_str, hora_str):
         data_hora = datetime.strptime(data_hora_str, "%Y-%m-%d %H:%M:%S")
         return FUSO_HORARIO_BRASIL.localize(data_hora)
     except Exception as e:
-        # st.error(f"Erro ao criar datetime manual: {e}") # Comentei para evitar spam de erro na interface
+        st.error(f"Erro ao criar datetime manual: {e}")
         return None
-
-# ====================================================================
-# 4. FUNÇÕES DE AUTENTICAÇÃO E USUÁRIOS
-# ====================================================================
-
-# Função de autenticação simples com mensagens
-def autenticar_usuario(nome_usuario, senha):
-    try:
-        dados = supabase.table("usuarios").select("*").eq("nome_usuario", nome_usuario).execute()
-
-        if dados.data:
-            usuario = dados.data[0]
-            if verificar_senha(senha, usuario["senha_hash"]):
-                st.success("✅ Logado com sucesso!")
-                return usuario
-        st.error("🛑 Usuário ou senha incorretos.")
-        return None
-
-    except Exception as e:
-        st.error(f"Erro ao autenticar: {e}")
-        return None
-
-# ====================================================================
-# 5. FUNÇÕES DE INTERAÇÃO COM O SUPABASE (CRUD DE DADOS)
-# ====================================================================
 
 # Função de inserção no Supabase
 def inserir_ocorrencia_supabase(dados):
@@ -225,37 +552,24 @@ def inserir_ocorrencia_supabase(dados):
         st.error("Erro ao criar data/hora manual para inserção no banco")
         return None
 
-# Definindo a conexão com o banco de dados (ajuste com as suas credenciais)
-def get_db_connection():
-    try:
-        conn = psycopg2.connect(
-            dbname="nome_do_banco",
-            user="usuario",
-            password="senha",
-            host="host_do_banco",
-            port="porta"
-        )
-        return conn
-    except Exception as e:
-        st.error(f"Erro ao conectar ao banco de dados: {e}")
-        return None
 
 # --- CARREGAMENTO DE DADOS Tabelas com nomes de motorista e clientes ---
 @st.cache_data(ttl=3600)
 def carregar_clientes_supabase():
     try:
-        response = supabase.table("clientes").select("cliente, focal, enviar_para_email, email_copia, cnpj").execute()
+        response = supabase.table("clientes").select("cliente, focal, enviar_para_email, email_copia").execute()
         if response.data:
             df_clientes = pd.DataFrame(response.data)
             df_clientes = df_clientes.dropna(subset=["cliente"])
             return df_clientes
         else:
-            return pd.DataFrame(columns=["cliente", "focal", "enviar_para_email", "email_copia", "cnpj"])
+            return pd.DataFrame(columns=["cliente", "focal", "enviar_para_email", "email_copia"])
     except Exception as e:
         st.error(f"Erro ao carregar clientes do banco: {e}")
-        return pd.DataFrame(columns=["cliente", "focal", "enviar_para_email", "email_copia", "cnpj"])
+        return pd.DataFrame(columns=["cliente", "focal", "enviar_para_email", "email_copia"])
 
-df_clientes = carregar_clientes_supabase() # Carregar dados globalmente
+# Carregar dados
+df_clientes = carregar_clientes_supabase()
 
 # Dicionários úteis
 cliente_to_focal = dict(zip(df_clientes["cliente"], df_clientes["focal"]))
@@ -268,33 +582,37 @@ cliente_to_emails = {
 }
 clientes = df_clientes["cliente"].tolist()
 
+
+
 # Buscar lista de cidades diretamente do Supabase
 @st.cache_data
 def carregar_cidades_supabase():
     try:
-        response = supabase.table("cidades").select("cidade, id").execute()
+        response = supabase.table("cidades").select("cidade").execute()
+        #st.write("✅ Cidades no banco:", response.data)  # para debug
         if response.data:
             cidades = [item["cidade"] for item in response.data if item.get("cidade")]
-            return sorted(set(cidades))
+            return sorted(set(cidades))  # Ordena e remove duplicados
         else:
             return []
     except Exception as e:
         st.error(f"Erro ao carregar cidades do banco: {e}")
         return []
 
-cidades = carregar_cidades_supabase() # Carregar dados globalmente
+cidades = carregar_cidades_supabase()
+
 
 # Buscar lista de motoristas diretamente do Supabase
 @st.cache_data
 def carregar_motoristas_supabase():
     try:
-        motoristas_list = []
+        motoristas = []
         pagina = 0
         pagina_tamanho = 1000  # Supabase retorna no máximo 1000 por requisição
 
         while True:
             resposta = supabase.table("motoristas") \
-                .select("motorista, id") \
+                .select("motorista") \
                 .range(pagina * pagina_tamanho, (pagina + 1) * pagina_tamanho - 1) \
                 .execute()
 
@@ -302,16 +620,24 @@ def carregar_motoristas_supabase():
             if not dados:
                 break
 
-            motoristas_list.extend([item["motorista"].strip() for item in dados if item.get("motorista")])
+            motoristas.extend([item["motorista"].strip() for item in dados if item.get("motorista")])
             pagina += 1
 
-        return sorted(set(motoristas_list))
+        return sorted(set(motoristas))
 
     except Exception as e:
         st.error(f"Erro ao carregar motoristas do banco: {e}")
         return []
 
-motoristas = carregar_motoristas_supabase() # Carregar dados globalmente
+
+
+motoristas = carregar_motoristas_supabase()
+
+try:
+    resposta = supabase.table("motoristas").select("*").execute()
+    
+except Exception as e:
+    st.error(f"Erro ao consultar a tabela motoristas: {e}")
 
 # Buscar lista de focais diretamente do Supabase
 @st.cache_data(ttl=3600)
@@ -328,12 +654,14 @@ def carregar_focal_supabase():
         return []
 
 # --- FUNÇÕES PARA A ABA CADASTROS ---
+
 def validar_texto_maiusculo(texto):
     """Verifica se o texto está em letras maiúsculas."""
     return texto == texto.upper()
 
 def validar_email(email):
     """Verifica se o e-mail tem um formato válido."""
+    import re
     padrao = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     return re.match(padrao, email) is not None
 
@@ -342,6 +670,7 @@ def validar_emails_multiplos(emails):
     if not emails:
         return True
     
+    import re
     padrao = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     
     for email in emails.split(';'):
@@ -366,7 +695,7 @@ def inserir_cidade(cidade):
         return True, "Cidade cadastrada com sucesso!"
     except Exception as e:
         return False, f"Erro ao cadastrar cidade: {e}"
-
+#---------------------------------------------------------------------------------------------------------
 def inserir_cliente(novo_cliente, focal, receber_emails, email_principal, email_copia, cnpj):
     """Insere um novo cliente no Supabase (Com CNPJ)"""
     try:
@@ -387,34 +716,36 @@ def inserir_cliente(novo_cliente, focal, receber_emails, email_principal, email_
         return True, f"Cliente '{novo_cliente}' cadastrado com sucesso!"
     except Exception as e:
         return False, f"Erro ao inserir cliente: {e}"
-
+#---------------------------------------------------------------------------------------------------------
 # --- NOVAS FUNÇÕES PARA ATUALIZAR DADOS (Coloque abaixo das funções de inserir) ---
 
 def atualizar_motorista(id_motorista, novo_nome):
     try:
-        supabase.table("motoristas").update({"motorista": novo_nome}).eq("id", id_motorista).execute()
+        supabase.table("motoristas").update({"nome": novo_nome}).eq("id", id_motorista).execute()
         return True, "Motorista atualizado com sucesso!"
     except Exception as e:
         return False, f"Erro ao atualizar: {e}"
-
+#---------------------------------------------------------------------------------------------------------
 def atualizar_cidade(id_cidade, nova_cidade):
     try:
         supabase.table("cidades").update({"cidade": nova_cidade}).eq("id", id_cidade).execute()
         return True, "Cidade atualizada com sucesso!"
     except Exception as e:
         return False, f"Erro ao atualizar: {e}"
-
+#---------------------------------------------------------------------------------------------------------
 def atualizar_cliente(id_cliente, dados_update):
     try:
         supabase.table("clientes").update(dados_update).eq("id", id_cliente).execute()
         return True, "Cliente atualizado com sucesso!"
     except Exception as e:
         return False, f"Erro ao atualizar: {e}"
+#---------------------------------------------------------------------------------------------------------
 
 def atualizar_tempo_envio_email(minutos):
     """Atualiza o tempo de envio de e-mail na configuração."""
     try:
-        st.session_state.tempo_envio_email = minutos # Atualiza na sessão
+        # Atualiza na sessão
+        st.session_state.tempo_envio_email = minutos
         
         # Atualiza no banco de dados (supondo que exista uma tabela de configurações)
         response = supabase.table("configuracoes").upsert({
@@ -425,7 +756,7 @@ def atualizar_tempo_envio_email(minutos):
         return True, f"Tempo de envio de e-mail atualizado para {minutos} minutos!"
     except Exception as e:
         return False, f"Erro ao atualizar tempo de envio de e-mail: {e}"
-
+#---------------------------------------------------------------------------------------------------------
 def carregar_tempo_envio_email():
     """Carrega o tempo de envio de e-mail da configuração."""
     try:
@@ -437,140 +768,11 @@ def carregar_tempo_envio_email():
     except Exception as e:
         st.error(f"Erro ao carregar tempo de envio de e-mail: {e}")
         return 30  # Valor padrão em caso de erro
+#-----------------------------------------------------------------------------------------------------------
+# ==========================================
+# SUBSTIUIR AS FUNÇÕES DE VERIFICAÇÃO POR ESTAS
+# ==========================================
 
-# Função para carregar ocorrências abertas
-@st.cache_data(ttl=420) # Cache válido por 7 minutos (420 segundos)
-def carregar_ocorrencias_abertas():
-    try:
-        if st.session_state.is_admin:
-            response = supabase.table("ocorrencias").select("*").eq("status", "Aberta").order("data_hora_abertura", desc=True).execute()
-        else:
-            dados_usuario = supabase.table("usuarios").select("unidade").eq("nome_usuario", st.session_state.username).execute().data
-            unidade_usuario = dados_usuario[0]["unidade"] if dados_usuario else None
-            response = supabase.table("ocorrencias").select("*").eq("status", "Aberta").eq("ticket_unidade", unidade_usuario).order("data_hora_abertura", desc=True).execute()
-        return response.data
-    except Exception as e:
-        st.error(f"Erro ao carregar ocorrências abertas: {e}")
-        return []
-
-# Função para carregar ocorrências por focal
-def carregar_ocorrencias_por_focal(focal=None):
-    try:
-        if st.session_state.is_admin:
-            response = supabase.table("ocorrencias").select("*").eq("status", "Aberta").eq("focal", focal).order("data_hora_abertura", desc=True).execute()
-        else:
-            dados_usuario = supabase.table("usuarios").select("unidade").eq("nome_usuario", st.session_state.username).execute().data
-            unidade_usuario = dados_usuario[0]["unidade"] if dados_usuario else None
-            response = supabase.table("ocorrencias").select("*").eq("status", "Aberta").eq("focal", focal).eq("ticket_unidade", unidade_usuario).order("data_hora_abertura", desc=True).execute()
-        return response.data
-    except Exception as e:
-        st.error(f"Erro ao carregar ocorrências por focal: {e}")
-        return []
-
-# Função para obter lista de focais com contagem de tickets
-def obter_focais_com_contagem():
-    try:
-        ocorrencias = carregar_ocorrencias_abertas()
-        
-        # Agrupar por focal e contar
-        focais_contagem = {}
-        for ocorr in ocorrencias:
-            focal = ocorr.get('focal')
-            if focal:
-                if focal not in focais_contagem:
-                    focais_contagem[focal] = 0
-                focais_contagem[focal] += 1
-        
-        # Ordenar por contagem (decrescente)
-        focais_ordenados = sorted(focais_contagem.items(), key=lambda x: x[1], reverse=True)
-        
-        return focais_ordenados
-    except Exception as e:
-        st.error(f"Erro ao obter focais com contagem: {e}")
-        return []
-
-# Função para finalizar ocorrência com suporte a imagem na finalização
-def finalizar_ocorrencia(ocorr, complemento, data_finalizacao_manual, hora_finalizacao_manual, imagem_url_finalizacao="", observacao_final="", numero_manifesto_val=""):
-    try:
-        data_abertura_manual = ocorr.get("data_abertura_manual")
-        hora_abertura_manual = ocorr.get("hora_abertura_manual")
-        
-        if not data_abertura_manual or not hora_abertura_manual:
-            return False, "Data/hora de abertura manual ausente. Não é possível calcular a permanência."
-        
-        try:
-            # 🔧 Etapa 1: combinar data e hora inseridas pelo usuário
-            data_finalizacao_obj = data_finalizacao_manual
-            data_hora_finalizacao = datetime.combine(data_finalizacao_obj, hora_finalizacao_manual)
-
-            # 🧪 Diagnóstico: antes do fuso
-            # st.write("💡 Data final manual (antes do fuso):", data_hora_finalizacao.strftime("%Y-%m-%d %H:%M:%S"))
-
-            # 🔧 Etapa 2: garantir que o fuso horário brasileiro seja aplicado corretamente
-            if data_hora_finalizacao.tzinfo is None:
-                data_hora_finalizacao = FUSO_HORARIO_BRASIL.localize(data_hora_finalizacao)
-            else:
-                data_hora_finalizacao = data_hora_finalizacao.astimezone(FUSO_HORARIO_BRASIL)
-
-            # 🧪 Diagnóstico: depois do fuso
-            # st.write("🕓 Data final (com fuso):", data_hora_finalizacao.strftime("%Y-%m-%d %H:%M:%S %Z"))
-            
-            # 🔧 Etapa 3: criar datetime de abertura
-            data_hora_abertura = criar_datetime_manual(data_abertura_manual, hora_abertura_manual)
-            if not data_hora_abertura:
-                return False, "Erro ao criar datetime a partir de data/hora de abertura manual."
-            
-            # 🔒 Verificação de consistência
-            if data_hora_finalizacao < data_hora_abertura:
-                return False, "Data/hora de finalização não pode ser menor que a data/hora de abertura."
-            
-            # 🔢 Calcular permanência
-            delta = calcular_diferenca_tempo(data_hora_abertura, data_hora_finalizacao)
-            total_segundos = int(delta.total_seconds())
-            horas = total_segundos // 3600
-            minutos = (total_segundos % 3600) // 60
-            segundos = total_segundos % 60
-            permanencia_manual = f"{horas:02d}:{minutos:02d}:{segundos:02d}"
-
-            # 🔄 Preparar dados para o banco
-            data_finalizacao_banco = data_hora_finalizacao.strftime("%Y-%m-%d")
-            hora_finalizacao_banco = data_hora_finalizacao.strftime("%H:%M:%S")
-
-            # 💾 Atualizar ocorrência no Supabase
-            response = supabase.table("ocorrencias").update({
-                "data_hora_finalizacao": data_hora_finalizacao.strftime("%Y-%m-%d %H:%M:%S"),
-                "finalizado_por": st.session_state.username,
-                "complementar": complemento,
-                "status": "Finalizada",
-                "permanencia_manual": permanencia_manual,
-                "data_finalizacao_manual": data_finalizacao_banco,
-                "hora_finalizacao_banco": hora_finalizacao_banco, # Nome da coluna ajustado de 'hora_finalizacao_manual'
-                "email_finalizacao_enviado": False,
-                "observacao_final": observacao_final,
-                "numero_manifesto": numero_manifesto_val, 
-                "imagem_finalizacao_url": imagem_url_finalizacao
-            }).eq("id", ocorr["id"]).execute()
-            
-            if response and response.data:
-                # 📧 Enviar e-mail de finalização (passa a ocorrência atualizada)
-                ocorr_atualizada = response.data[0]
-                enviar_email_finalizacao(ocorr_atualizada)
-                
-                return True, "Ocorrência finalizada com sucesso!"
-            else:
-                return False, "Erro ao salvar a finalização no banco de dados."
-
-        except ValueError:
-            return False, "Formato inválido para data/hora de finalização. Use DD-MM-AAAA para a data e HH:MM para a hora."
-        except Exception as e:
-            return False, f"Erro ao calcular ou salvar permanência manual: {e}"
-
-    except Exception as e:
-        return False, f"Erro ao finalizar ocorrência: {e}"
-
-# ====================================================================
-# 6. FUNÇÕES DE E-MAIL (ENVIO E VERIFICAÇÃO)
-# ====================================================================
 
 def enviar_email(destinatario, copia, assunto, corpo, imagem_url=None):
     """Envia e-mail com corpo HTML e anexo de imagem (se fornecido)."""
@@ -644,525 +846,498 @@ def enviar_email(destinatario, copia, assunto, corpo, imagem_url=None):
     except Exception as e:
         return False, f"Erro ao enviar e-mail: {str(e)}"
 
-def carregar_dados_clientes_email():
-    try:
-        response = supabase.table("clientes").select("cliente, enviar_para_email, email_copia").execute()
-        if response.data:
-            return {
-                item["cliente"]: {
-                    "principal": item.get("enviar_para_email", ""),
-                    "copia": item.get("email_copia", "")
-                }
-                for item in response.data if item.get("enviar_para_email")
-            }
-        else:
-            return {}
-    except Exception as e:
-        st.error(f"Erro ao carregar e-mails dos clientes: {e}")
-        return {}
+#----------------------------------------------------------------------------------------------------------------------------------------
 
-def obter_ocorrencias_abertas_30min():
-    """Obtém ocorrências abertas que ainda não receberam e-mail de abertura (30min)."""
-    try:
-        response = supabase.table("ocorrencias").select("*").eq("status", "Aberta").eq("email_enviado_abertura", False).execute()
-        return response.data if response.data else []
-    except Exception as e:
-        st.error(f"Erro ao obter ocorrências abertas para 30min: {e}")
-        return []
-
-def obter_ocorrencias_abertas_90min():
-    """Obtém ocorrências abertas que ainda não receberam o e-mail de 90 minutos."""
-    try:
-        # A flag no banco é `email_enviado_90min`.
-        # Precisamos buscar ocorrências onde essa flag é False ou é NULL (para as mais antigas).
-        response = supabase.table("ocorrencias") \
-            .select("*") \
-            .eq("status", "Aberta") \
-            .or_("email_enviado_90min.is.null,email_enviado_90min.eq.false") \
-            .execute()
-
-        return response.data if response.data else []
-
-    except Exception as e:
-        st.error(f"Erro ao obter ocorrências abertas para 90min: {e}")
-        return []
-
-def marcar_email_como_enviado(ocorrencia_id, tipo="abertura"):
-    """Marca a ocorrência como tendo recebido e-mail."""
-    try:
-        campo = ""
-        if tipo == "abertura":
-            campo = "email_enviado_abertura"
-        elif tipo == "noventamin": # Para o email de 90 minutos
-            campo = "email_enviado_90min"
-        elif tipo == "finalizacao":
-            campo = "email_finalizacao_enviado"
-        
-        if campo:
-            response = supabase.table("ocorrencias").update({
-                campo: True
-            }).eq("id", ocorrencia_id).execute()
-            
-            return response.data is not None
-        return False
-    except Exception as e:
-        st.error(f"Erro ao atualizar status de e-mail enviado: {e}")
-        return False
-
-def enviar_email_finalizacao(ocorr_atualizada):
-    """Envia e-mail de finalização para o cliente, incluindo imagem se houver."""
-    try:
-        # Carregar dados do cliente
-        clientes_emails = carregar_dados_clientes_email()
-        cliente = ocorr_atualizada.get('cliente')
-        
-        if cliente in clientes_emails:
-            email_info = clientes_emails[cliente]
-            email_principal = email_info['principal']
-            email_copia = email_info['copia']
-            
-            # Obter dados de abertura e finalização
-            data_abertura = f"{ocorr_atualizada.get('data_abertura_manual', '-')} {ocorr_atualizada.get('hora_abertura_manual', '-')}"
-            data_finalizacao = f"{ocorr_atualizada.get('data_finalizacao_manual', '-')} {ocorr_atualizada.get('hora_finalizacao_banco', '-')}" # Ajuste para 'hora_finalizacao_banco'
-            
-            # Obter imagem (se houver)
-            imagem_url = ocorr_atualizada.get("imagem_finalizacao_url", "")
-            if imagem_url:
-                imagem_html = f"""
-                <tr>
-                    <th>Imagem Ticket</th>
-                    <td><a href="{imagem_url}" target="_blank" style="color:#007bff;text-decoration:none;">Baixar Imagem</a></td>
-                </tr>
-                """
-            else:
-                imagem_html = "<tr><th>Imagem Ticket</th><td>Não Anexada</td></tr>"
-            
-            # Criar corpo do e-mail
-            corpo_html = f"""
-            <html>
-            <head>
-                <style>
-                    body {{ font-family: Arial, sans-serif; }}
-                    table {{ border-collapse: collapse; width: 100%; }}
-                    th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-                    th {{ background-color: #f2f2f2; }}
-                    .header {{ background-color: #4CAF50; color: white; padding: 10px; }}
-                </style>
-            </head>
-            <body>
-                <div class="header">
-                    <h2>Notificação de Ocorrência Finalizada</h2>
-                </div>
-                <p>Prezado cliente <strong>{cliente}</strong>,</p>
-                <p>Informamos que a seguinte ocorrência foi finalizada:</p>
-                <table>
-                    <tr><th>Ticket</th><td>{ocorr_atualizada.get('numero_ticket', '-')}</td></tr>
-                    <tr><th>Nota Fiscal</th><td>{ocorr_atualizada.get('nota_fiscal', '-')}</td></tr>
-                    <tr><th>Destinatário</th><td>{ocorr_atualizada.get('destinatario', '-')}</td></tr>
-                    <tr><th>Cidade</th><td>{ocorr_atualizada.get('cidade', '-')}</td></tr>
-                    <tr><th>Motorista</th><td>{ocorr_atualizada.get('motorista', '-')}</td></tr>
-                    <tr><th>Tipo</th><td>{ocorr_atualizada.get('tipo_de_ocorrencia', '-')}</td></tr>
-                    <tr><th>Data/Hora Abertura</th><td>{data_abertura}</td></tr>
-                    <tr><th>Data/Hora Finalização</th><td>{data_finalizacao}</td></tr>
-                    <tr><th>Permanência</th><td>{ocorr_atualizada.get('permanencia_manual', '-')}</td></tr>
-                    {imagem_html}
-                </table>
-                <p><strong>Complemento:</strong> {ocorr_atualizada.get('complementar', 'Sem complemento.')}</p>
-                <p>Atenciosamente,<br>Equipe de Monitoramento ClikLog Transportes</p>
-            </body>
-            </html>
-            """
-
-            # Enviar e-mail (com imagem em anexo caso exista)
-            assunto = f"Notificação: Ocorrência Finalizada - {cliente} - NF {ocorr_atualizada.get('nota_fiscal', '-')}"
-            sucesso, mensagem = enviar_email(email_principal, email_copia, assunto, corpo_html)
-            
-            if sucesso:
-                marcar_email_como_enviado(ocorr_atualizada["id"], "finalizacao")
-
-                # Registrar no Supabase
-                supabase.table("emails_enviados").insert({
-                    "data_hora": obter_data_hora_atual_brasil().isoformat(),
-                    "tipo": "Finalização",
-                    "cliente": cliente,
-                    "email": email_principal,
-                    "ticket": ocorr_atualizada.get('numero_ticket', '-'),
-                    "nota_fiscal": ocorr_atualizada.get('nota_fiscal', '-'),
-                    "status": "Enviado"
-                }).execute()
-
-                return True, "E-mail de finalização enviado com sucesso"
-            else:
-                return False, mensagem
-        else:
-            return False, "Cliente não possui e-mail cadastrado"
-    except Exception as e:
-        return False, f"Erro ao enviar e-mail de finalização: {e}"
-
-def verificar_e_enviar_email_abertura(ocorrencia):
+def verificar_e_enviar_email_abertura(ocorrencias):
     """
     Verifica se passou do tempo limite (ex: 30 min) e envia e-mail de abertura.
-    Retorna (sucesso, mensagem)
     """
+    # Proteção: se receber um dicionário único, transforma em lista
+    if isinstance(ocorrencias, dict):
+        ocorrencias = [ocorrencias]
+
     agora = obter_data_hora_atual_brasil()
     tempo_limite_min = carregar_tempo_envio_email()  # Padrão 30 min
 
-    # 1. Ignorar se já foi enviado ou finalizado
-    if ocorrencia.get("email_enviado_abertura") is True:
-        return False, "E-mail de abertura já enviado."
-    if ocorrencia.get("status") == "Finalizada": # Ajustei para "Finalizada"
-        return False, "Ocorrência já finalizada."
+    for ocorrencia in ocorrencias:
+        # 1. Ignorar se já foi enviado ou finalizado
+        if ocorrencia.get("email_enviado_abertura") is True:
+            continue
+        if ocorrencia.get("status") == "Finalizado":
+            continue
 
-    try:
-        # 2. Calcular tempo decorrido
-        data_str = ocorrencia.get("data_abertura_manual") # YYYY-MM-DD
-        hora_str = ocorrencia.get("hora_abertura_manual") # HH:MM:SS
-        
-        # Garante que temos as datas
-        if not data_str or not hora_str:
-            return False, f"Ticket {ocorrencia.get('numero_ticket')}: Data/Hora manual ausente."
+        try:
+            # 2. Calcular tempo decorrido
+            data_str = ocorrencia.get("data_abertura_manual") # YYYY-MM-DD
+            hora_str = ocorrencia.get("hora_abertura_manual") # HH:MM:SS
+            
+            # Garante que temos as datas
+            if not data_str or not hora_str:
+                print(f"⚠️ Ticket {ocorrencia.get('numero_ticket')}: Data/Hora manual ausente.")
+                continue
 
-        dt_abertura = criar_datetime_manual(data_str, hora_str)
-        if not dt_abertura:
-            return False, f"Ticket {ocorrencia.get('numero_ticket')}: Erro ao criar datetime manual."
-        
-        diferenca = agora - dt_abertura
-        diferenca_minutos = diferenca.total_seconds() / 60
+            dt_abertura = datetime.strptime(f"{data_str} {hora_str}", "%Y-%m-%d %H:%M:%S")
+            dt_abertura = pytz.timezone("America/Sao_Paulo").localize(dt_abertura)
+            
+            diferenca = agora - dt_abertura
+            diferenca_minutos = diferenca.total_seconds() / 60
 
-        # 3. Verificar regra (Ex: >= 30 min)
-        if diferenca_minutos >= tempo_limite_min:
-            print(f"📧 Disparando 1º E-mail ({tempo_limite_min}min) para Ticket {ocorrencia.get('numero_ticket')} (Atraso: {int(diferenca_minutos)} min)")
-            
-            # Buscar emails do cliente
-            nome_cliente = ocorrencia.get("cliente")
-            dados_emails = cliente_to_emails.get(nome_cliente)
-            
-            if not dados_emails or not dados_emails["principal"]:
-                return False, f"Cliente {nome_cliente} sem e-mail principal configurado."
+            # 3. Verificar regra (Ex: > 30 min)
+            if diferenca_minutos >= tempo_limite_min:
+                print(f"📧 Disparando 1º E-mail (30min) para Ticket {ocorrencia.get('numero_ticket')} (Atraso: {int(diferenca_minutos)} min)")
+                
+                # Buscar emails do cliente
+                nome_cliente = ocorrencia.get("cliente")
+                dados_emails = cliente_to_emails.get(nome_cliente)
+                
+                if not dados_emails:
+                    print(f"❌ Cliente {nome_cliente} sem e-mail configurado.")
+                    continue
 
-            destinatario = dados_emails["principal"]
-            copia = dados_emails["copia"]
-            
-            assunto = f"ClickLog Transportes - Ocorrência em Aberto - Ticket {ocorrencia.get('numero_ticket')}"
-            
-            data_hora_str = f"{ocorrencia['data_abertura_manual']} {ocorrencia['hora_abertura_manual']}"
-            imagem_url_abertura = ocorrencia.get("imagem_url", "") # Obter a URL da imagem de abertura
-            imagem_html = ""
-            if imagem_url_abertura:
-                imagem_html = f"""
-                <tr>
-                    <th>Imagem da Ocorrência</th>
-                    <td><a href="{imagem_url_abertura}" target="_blank" style="color:#007bff;text-decoration:none;">Visualizar Imagem</a></td>
-                </tr>
+                destinatario = dados_emails["principal"]
+                copia = dados_emails["copia"]
+                
+                assunto = f"ClickLog Transportes - Ocorrência em Aberto - Ticket {ocorrencia.get('numero_ticket')}"
+                
+                # --- INÍCIO DA ALTERAÇÃO ---
+                data_hora_str = f"{ocorrencia['data_abertura_manual']} {ocorrencia['hora_abertura_manual']}"
+                imagem_url_abertura = ocorrencia.get("imagem_url", "") # Obter a URL da imagem de abertura
+                imagem_html = ""
+                if imagem_url_abertura:
+                    imagem_html = f"""
+                    <tr>
+                        <th>Imagem da Ocorrência</th>
+                        <td><a href="{imagem_url_abertura}"  style="color:#007bff;text-decoration:none;">Visualizar Imagem</a></td>
+                    </tr>
+                    """
+
+                corpo = f"""
+                <html>
+                <head>
+                    <style>
+                        body {{ font-family: Arial, sans-serif; }}
+                        table {{ border-collapse: collapse; width: 100%; border: 1px solid #ddd; }}
+                        th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+                        th {{ background-color: #f2f2f2; }}
+                        .header {{ background-color: #f08104; color: white; padding: 10px; }}
+                        .warning {{ color: gray; font-size: 12px; }}
+                        .important {{ font-weight: bold; }}
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <h2>Notificação de Ocorrência em Aberto</h2>
+                    </div>
+
+                    <p>Prezado(a) cliente <span class="important">{nome_cliente}</span>,</p>
+
+                    <p>
+                        Informamos que o veículo referente à entrega abaixo identificada
+                        encontra-se no ponto de descarga há mais de <span class="important">30 minutos</span>.
+                    </p>
+
+                    <p>
+                        Ressaltamos que, após <span class="important">45 minutos</span> de permanência no local,
+                        poderá ser aplicada a <span class="important">TDE</span>, conforme condições previstas em tabela.
+                    </p>
+
+                    <p>
+                        Solicitamos, por gentileza, sua intervenção no processo de descarga
+                        para evitar a aplicação de custos adicionais.
+                    </p>
+
+                    <table>
+                        <tr><th>Ticket</th><td>{ocorrencia.get('numero_ticket', '-')}</td></tr>
+                        <tr><th>Nota Fiscal</th><td>{ocorrencia.get('nota_fiscal', '-')}</td></tr>
+                        <tr><th>Destinatário</th><td>{ocorrencia.get('destinatario', '-')}</td></tr>
+                        <tr><th>Cidade</th><td>{ocorrencia.get('cidade', '-')}</td></tr>
+                        <tr><th>Motorista</th><td>{ocorrencia.get('motorista', '-')}</td></tr>
+                        <tr><th>Tipo de Ocorrência</th><td>{ocorrencia.get('tipo_de_ocorrencia', '-')}</td></tr>
+                        <tr><th>Data/Hora de Abertura</th><td>{data_hora_str}</td></tr>
+                        {imagem_html}
+                    </table>
+
+                    <p>
+                        Permanecemos à disposição para quaisquer esclarecimentos.
+                    </p>
+
+                    <p>
+                        Atenciosamente,<br>
+                        <span class="important">Equipe de Monitoramento</span><br>
+                        ClikLog Transportes
+                    </p>
+
+                    <p class="warning">
+                        ⚠️ Este é um e-mail automático. Por favor, não responda.
+                    </p>
+                </body>
+                </html>
                 """
+                # --- FIM DA ALTERAÇÃO ---
 
-            corpo = f"""
-            <html>
-            <head>
-                <style>
-                    body {{ font-family: Arial, sans-serif; }}
-                    table {{ border-collapse: collapse; width: 100%; border: 1px solid #ddd; }}
-                    th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-                    th {{ background-color: #f2f2f2; }}
-                    .header {{ background-color: #f08104; color: white; padding: 10px; }}
-                    .warning {{ color: gray; font-size: 12px; }}
-                    .important {{ font-weight: bold; }}
-                </style>
-            </head>
-            <body>
-                <div class="header">
-                    <h2>Notificação de Ocorrência em Aberto</h2>
-                </div>
+                enviou, msg = enviar_email(destinatario, copia, assunto, corpo, ocorrencia.get("imagem_url"))
+                
+                if enviou:
+                    print(f"✅ Sucesso envio 30min: {msg}")
+                    # Atualiza Flag no Banco
+                    supabase.table("ocorrencias").update({"email_enviado_abertura": True}).eq("id", ocorrencia["id"]).execute()
+# Atualiza Flag Local (para não tentar enviar de novo na mesma execução)
+                    ocorrencia["email_enviado_abertura"] = True
+                else:
+                    print(f"❌ Falha envio 30min: {msg}")
 
-                <p>Prezado(a) cliente <span class="important">{nome_cliente}</span>,</p>
+        except Exception as e:
+            print(f"Erro ao processar email abertura para ticket {ocorrencia.get('numero_ticket')}: {e}")
 
-                <p>
-                    Informamos que o veículo referente à entrega abaixo identificada
-                    encontra-se no ponto de descarga há mais de <span class="important">{int(tempo_limite_min)} minutos</span>.
-                </p>
-
-                <p>
-                    Ressaltamos que, após <span class="important">45 minutos</span> de permanência no local,
-                    poderá ser aplicada a <span class="important">TDE</span>, conforme condições previstas em tabela.
-                </p>
-
-                <p>
-                    Solicitamos, por gentileza, sua intervenção no processo de descarga
-                    para evitar a aplicação de custos adicionais.
-                </p>
-
-                <table>
-                    <tr><th>Ticket</th><td>{ocorrencia.get('numero_ticket', '-')}</td></tr>
-                    <tr><th>Nota Fiscal</th><td>{ocorrencia.get('nota_fiscal', '-')}</td></tr>
-                    <tr><th>Destinatário</th><td>{ocorrencia.get('destinatario', '-')}</td></tr>
-                    <tr><th>Cidade</th><td>{ocorrencia.get('cidade', '-')}</td></tr>
-                    <tr><th>Motorista</th><td>{ocorrencia.get('motorista', '-')}</td></tr>
-                    <tr><th>Tipo de Ocorrência</th><td>{ocorrencia.get('tipo_de_ocorrencia', '-')}</td></tr>
-                    <tr><th>Data/Hora de Abertura</th><td>{data_hora_str}</td></tr>
-                    {imagem_html}
-                </table>
-
-                <p>
-                    Permanecemos à disposição para quaisquer esclarecimentos.
-                </p>
-
-                <p>
-                    Atenciosamente,<br>
-                    <span class="important">Equipe de Monitoramento</span><br>
-                    ClikLog Transportes
-                </p>
-
-                <p class="warning">
-                    ⚠️ Este é um e-mail automático. Por favor, não responda.
-                </p>
-            </body>
-            </html>
-            """
-            enviou, msg = enviar_email(destinatario, copia, assunto, corpo, ocorrencia.get("imagem_url"))
-            
-            if enviou:
-                print(f"✅ Sucesso envio {tempo_limite_min}min: {msg}")
-                supabase.table("ocorrencias").update({"email_enviado_abertura": True}).eq("id", ocorrencia["id"]).execute()
-                # Atualiza Flag Local (para não tentar enviar de novo na mesma execução)
-                ocorrencia["email_enviado_abertura"] = True
-
-
-                # --- NOVO: Registrar envio na tabela emails_enviados ---
-                supabase.table("emails_enviados").insert({
-                    "data_hora": obter_data_hora_atual_brasil().isoformat(),
-                    "tipo": f"Alerta {tempo_limite_min}min", # ou "Alerta 30min"
-                    "cliente": nome_cliente,
-                    "email": destinatario, # ou uma string com todos os destinatários se preferir
-                    "ticket": ocorrencia.get('numero_ticket', '-'),
-                    "nota_fiscal": ocorrencia.get('nota_fiscal', '-'),
-                    "status": "Enviado"
-                }).execute()
-
-                return True, f"E-mail de {tempo_limite_min}min enviado com sucesso."
-            else:
-                print(f"❌ Falha envio {tempo_limite_min}min: {msg}")
-                return False, f"Falha ao enviar e-mail de {tempo_limite_min}min: {msg}"
-        else:
-            return False, f"Ainda não se passaram {tempo_limite_min} minutos."
-
-    except Exception as e:
-        print(f"Erro ao processar email abertura para ticket {ocorrencia.get('numero_ticket')}: {e}")
-        return False, f"Erro inesperado: {str(e)}"
-
-def verificar_e_enviar_email_90min(ocorrencia):
+#--------------------------------------------------------------------------------------------------------------------------------------------------
+#--------------------------------------------------------------------------------------------------------------------------------------------------
+def verificar_e_enviar_email_90min(ocorrencias):
     """
     Verifica se passou de 90 min e envia o segundo alerta.
-    Retorna (sucesso, mensagem)
     """
+    # Proteção: se receber um dicionário único, transforma em lista
+    if isinstance(ocorrencias, dict):
+        ocorrencias = [ocorrencias]
+
     agora = obter_data_hora_atual_brasil()
     
-    # 1. Ignorar se já foi enviado o de 90min ou finalizado
-    if ocorrencia.get("email_enviado_90min") is True:
-        return False, "E-mail de 90min já enviado."
-    if ocorrencia.get("status") == "Finalizada": # Ajustei para "Finalizada"
-        return False, "Ocorrência já finalizada."
+    for ocorrencia in ocorrencias:
+        # 1. Ignorar se já foi enviado o de 90min (NÃO verificar o de abertura aqui!)
+        if ocorrencia.get("email_enviado_90min") is True:
+            continue
+        if ocorrencia.get("status") == "Finalizado":
+            continue
 
-    try:
-        # 2. Calcular tempo decorrido
-        data_str = ocorrencia.get("data_abertura_manual")
-        hora_str = ocorrencia.get("hora_abertura_manual")
-        
-        if not data_str or not hora_str:
-            return False, f"Ticket {ocorrencia.get('numero_ticket')}: Data/Hora manual ausente para 90min."
+        try:
+            # 2. Calcular tempo decorrido
+            data_str = ocorrencia.get("data_abertura_manual")
+            hora_str = ocorrencia.get("hora_abertura_manual")
+            
+            if not data_str or not hora_str:
+                continue
 
-        dt_abertura = criar_datetime_manual(data_str, hora_str)
-        if not dt_abertura:
-            return False, f"Ticket {ocorrencia.get('numero_ticket')}: Erro ao criar datetime manual para 90min."
-        
-        diferenca = agora - dt_abertura
-        diferenca_minutos = diferenca.total_seconds() / 60
+            dt_abertura = datetime.strptime(f"{data_str} {hora_str}", "%Y-%m-%d %H:%M:%S")
+            dt_abertura = pytz.timezone("America/Sao_Paulo").localize(dt_abertura)
+            
+            diferenca = agora - dt_abertura
+            diferenca_minutos = diferenca.total_seconds() / 60
 
-        # 3. Verificar regra (>= 90 min)
-        if diferenca_minutos >= 90:
-            print(f"📧📧 Disparando 2º E-mail (90min) para Ticket {ocorrencia.get('numero_ticket')} (Atraso: {int(diferenca_minutos)} min)")
-            
-            nome_cliente = ocorrencia.get("cliente")
-            dados_emails = cliente_to_emails.get(nome_cliente)
-            
-            if not dados_emails or not dados_emails["principal"]:
-                return False, f"Cliente {nome_cliente} sem e-mail principal configurado para 90min."
+            # 3. Verificar regra (> 90 min)
+            if diferenca_minutos >= 90:
+                print(f"📧📧 Disparando 2º E-mail (90min) para Ticket {ocorrencia.get('numero_ticket')} (Atraso: {int(diferenca_minutos)} min)")
+                
+                nome_cliente = ocorrencia.get("cliente")
+                dados_emails = cliente_to_emails.get(nome_cliente)
+                
+                if not dados_emails:
+                    continue
 
-            destinatario = dados_emails["principal"]
-            copia = dados_emails["copia"]
-            
-            assunto = f"URGENTE: Alerta de Permanência – Ocorrência em Aberto - Ticket {ocorrencia.get('numero_ticket')}"
-            
-            # --- INÍCIO DA ALTERAÇÃO ---
-            # Formata a data de abertura para exibição no e-mail
-            data_abertura_formatada = f"{ocorrencia.get('data_abertura_manual', '-')} {ocorrencia.get('hora_abertura_manual', '-')}"
-            
-            # Prepara o HTML da imagem (se houver)
-            imagem_url_abertura = ocorrencia.get("imagem_url", "")
-            imagem_html = ""
-            if imagem_url_abertura:
-                imagem_html = f"""
-                <tr>
-                    <th>Imagem da Ocorrência</th>
-                    <td><a href="{imagem_url_abertura}" target="_blank" style="color:#007bff;text-decoration:none;">Visualizar Imagem</a></td>
-                </tr>
+                destinatario = dados_emails["principal"]
+                copia = dados_emails["copia"]
+                
+                assunto = f"URGENTE: Alerta de Permanência – Ocorrência em Aberto - Ticket {ocorrencia.get('numero_ticket')}"
+                
+                # --- INÍCIO DA ALTERAÇÃO ---
+                # Formata a data de abertura para exibição no e-mail
+                data_abertura_formatada = f"{ocorrencia.get('data_abertura_manual', '-')} {ocorrencia.get('hora_abertura_manual', '-')}"
+                
+                # Prepara o HTML da imagem (se houver)
+                imagem_url_abertura = ocorrencia.get("imagem_url", "")
+                imagem_html = ""
+                if imagem_url_abertura:
+                    imagem_html = f"""
+                    <tr>
+                        <th>Imagem da Ocorrência</th>
+                        <td><a href="{imagem_url_abertura}"  style="color:#007bff;text-decoration:none;">Visualizar Imagem</a></td>
+                    </tr>
+                    """
+
+                # Calcula o tempo em aberto de forma mais precisa para exibição
+                # Embora o prompt peça 'ocorrencia.get("permanencia_manual", "1h30 ou mais")',
+                # é mais informativo mostrar o tempo real que já está sendo calculado.
+                total_segundos = int(diferenca.total_seconds())
+                horas = total_segundos // 3600
+                minutos = (total_segundos % 3600) // 60
+                tempo_em_aberto_formatado = f"{horas}h {minutos}min"
+                if horas == 0:
+                    tempo_em_aberto_formatado = f"{minutos}min"
+                
+                corpo = f"""
+                <html>
+                <head>
+                    <style>
+                        body {{ font-family: Arial, sans-serif; }}
+                        table {{ border-collapse: collapse; width: 100%; border: 1px solid #ddd; }}
+                        th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+                        th {{ background-color: #f2f2f2; }}
+                        .header {{ background-color: #d9534f; color: white; padding: 10px; }}
+                        .warning {{ color: gray; font-size: 12px; }}
+                        .important {{ font-weight: bold; }}
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <h2>Alerta de Permanência – Ocorrência em Aberto</h2>
+                    </div>
+
+                    <p>Prezado(a) cliente <span class="important">{nome_cliente}</span>,</p>
+
+                    <p>
+                        Informamos que o veículo referente à entrega abaixo identificada
+                        encontra-se no ponto de descarga há mais de <span class="important">1 hora e 30 minutos</span>.
+                    </p>
+
+                    <p>
+                        Conforme previsto em contrato, o tempo de permanência foi excedido e
+                        poderá haver aplicação de <span class="important">TDE</span>, conforme tabela vigente.
+                    </p>
+
+                    <p>
+                        Solicitamos sua atuação imediata para regularização do processo de descarga
+                        e mitigação de custos adicionais.
+                    </p>
+
+                    <table>
+                        <tr><th>Ticket</th><td>{ocorrencia.get('numero_ticket', '-')}</td></tr>
+                        <tr><th>Nota Fiscal</th><td>{ocorrencia.get('nota_fiscal', '-')}</td></tr>
+                        <tr><th>Destinatário</th><td>{ocorrencia.get('destinatario', '-')}</td></tr>
+                        <tr><th>Cidade</th><td>{ocorrencia.get('cidade', '-')}</td></tr>
+                        <tr><th>Motorista</th><td>{ocorrencia.get('motorista', '-')}</td></tr>
+                        <tr><th>Tipo de Ocorrência</th><td>{ocorrencia.get('tipo_de_ocorrencia', '-')}</td></tr>
+                        <tr><th>Data/Hora de Abertura</th><td>{data_abertura_formatada}</td></tr>
+                        <tr><th>Tempo em Aberto</th><td>{tempo_em_aberto_formatado}</td></tr>
+                        {imagem_html}
+                    </table>
+
+                    <p>
+                        Permanecemos à disposição para quaisquer esclarecimentos.
+                    </p>
+
+                    <p>
+                        Atenciosamente,<br>
+                        <span class="important">Equipe de Monitoramento</span><br>
+                        ClikLog Transportes
+                    </p>
+
+                    <p class="warning">
+                        ⚠️ Este é um e-mail automático. Por favor, não responda.
+                    </p>
+                </body>
+                </html>
                 """
+                # --- FIM DA ALTERAÇÃO ---
 
-            # Calcula o tempo em aberto de forma mais precisa para exibição
-            total_segundos = int(diferenca.total_seconds())
-            horas = total_segundos // 3600
-            minutos = (total_segundos % 3600) // 60
-            tempo_em_aberto_formatado = f"{horas}h {minutos}min"
-            if horas == 0:
-                tempo_em_aberto_formatado = f"{minutos}min"
-            
-            corpo = f"""
-            <html>
-            <head>
-                <style>
-                    body {{ font-family: Arial, sans-serif; }}
-                    table {{ border-collapse: collapse; width: 100%; border: 1px solid #ddd; }}
-                    th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-                    th {{ background-color: #f2f2f2; }}
-                    .header {{ background-color: #d9534f; color: white; padding: 10px; }}
-                    .warning {{ color: gray; font-size: 12px; }}
-                    .important {{ font-weight: bold; }}
-                </style>
-            </head>
-            <body>
-                <div class="header">
-                    <h2>Alerta de Permanência – Ocorrência em Aberto</h2>
-                </div>
+                enviou, msg = enviar_email(destinatario, copia, assunto, corpo, ocorrencia.get("imagem_url"))
+                
+                if enviou:
+                    print(f"✅ Sucesso envio 90min: {msg}")
+                    supabase.table("ocorrencias").update({"email_enviado_90min": True}).eq("id", ocorrencia["id"]).execute()
+                    ocorrencia["email_enviado_90min"] = True
+                else:
+                    print(f"❌ Falha envio 90min: {msg}")
 
-                <p>Prezado(a) cliente <span class="important">{nome_cliente}</span>,</p>
+        except Exception as e:
+            print(f"Erro ao processar email 90min para ticket {ocorrencia.get('numero_ticket')}: {e}")
 
-                <p>
-                    Informamos que o veículo referente à entrega abaixo identificada
-                    encontra-se no ponto de descarga há mais de <span class="important">1 hora e 30 minutos</span>.
-                </p>
 
-                <p>
-                    Conforme previsto em contrato, o tempo de permanência foi excedido e
-                    poderá haver aplicação de <span class="important">TDE</span>, conforme tabela vigente.
-                </p>
+# =========================
+#     ABA 1 - NOVA OCORRENCIA
+# =========================
+if st.session_state.aba_ativa == "aba1":
+    st.header("Nova Ocorrência")
 
-                <p>
-                    Solicitamos sua atuação imediata para regularização do processo de descarga
-                    e mitigação de custos adicionais.
-                </p>
+    # Definindo sessão focal_responsavel
+    if "focal_responsavel" not in st.session_state:
+        st.session_state["focal_responsavel"] = ""
 
-                <table>
-                    <tr><th>Ticket</th><td>{ocorrencia.get('numero_ticket', '-')}</td></tr>
-                    <tr><th>Nota Fiscal</th><td>{ocorrencia.get('nota_fiscal', '-')}</td></tr>
-                    <tr><th>Destinatário</th><td>{ocorrencia.get('destinatario', '-')}</td></tr>
-                    <tr><th>Cidade</th><td>{ocorrencia.get('cidade', '-')}</td></tr>
-                    <tr><th>Motorista</th><td>{ocorrencia.get('motorista', '-')}</td></tr>
-                    <tr><th>Tipo de Ocorrência</th><td>{ocorrencia.get('tipo_de_ocorrencia', '-')}</td></tr>
-                    <tr><th>Data/Hora de Abertura</th><td>{data_abertura_formatada}</td></tr>
-                    <tr><th>Tempo em Aberto</th><td>{tempo_em_aberto_formatado}</td></tr>
-                    {imagem_html}
-                </table>
+    # Formulário para nova ocorrência
+    with st.form("form_nova_ocorrencia", clear_on_submit=True):
+        col1, col2 = st.columns(2)
 
-                <p>
-                    Permanecemos à disposição para quaisquer esclarecimentos.
-                </p>
+        with col1:
+            nf = st.text_input("Nota Fiscal", key="nf")
+            nf_invalida = nf != "" and not nf.isdigit()
+            if nf_invalida:
+                st.error("Por favor, insira apenas números na Nota Fiscal.")
 
-                <p>
-                    Atenciosamente,<br>
-                    <span class="important">Equipe de Monitoramento</span><br>
-                    ClikLog Transportes
-                </p>
+            destinatario = st.text_input("Destinatário", key="destinatario")
 
-                <p class="warning">
-                    ⚠️ Este é um e-mail automático. Por favor, não responda.
-                </p>
-            </body>
-            </html>
-            """
-            enviou, msg = enviar_email(destinatario, copia, assunto, corpo, ocorrencia.get("imagem_url"))
-            
-            if enviou:
-                print(f"✅ Sucesso envio 90min: {msg}")
-                supabase.table("ocorrencias").update({"email_enviado_90min": True}).eq("id", ocorrencia["id"]).execute()
-                ocorrencia["email_enviado_90min"] = True
-                return True, "E-mail de 90min enviado com sucesso."
+            cliente_opcao = st.selectbox("Cliente", options=clientes + ["Outro ()"], index=None, key="cliente_opcao")
+            cliente = st.text_input("Digite o nome do cliente", key="cliente_manual") if cliente_opcao == "Outro ()" else cliente_opcao
+
+            if cliente_opcao and cliente_opcao in cliente_to_focal:
+                st.session_state["focal_responsavel"] = cliente_to_focal[cliente_opcao]
+            elif cliente_opcao:
+                st.session_state["focal_responsavel"] = ""
+
+            cidade_opcao = st.selectbox("Cidade", options=cidades + ["Outro (digitar manualmente)"], index=None, key="cidade_opcao")
+            cidade = st.text_input("Digite o nome da cidade", key="cidade_manual") if cidade_opcao == "Outro (digitar manualmente)" else cidade_opcao
+
+            imagem = st.file_uploader("📎 Anexar imagem (opcional)", type=["png", "jpg", "jpeg"], key="imagem_ocorrencia")
+
+
+        with col2:
+            motoristas_brutos = supabase.table("motoristas").select("motorista").limit(40000).execute()
+
+            if motoristas_brutos.data:
+                motoristas = [item["motorista"].strip() for item in motoristas_brutos.data if item.get("motorista")]
+                motoristas = sorted(set(motoristas))
+                motoristas = carregar_motoristas_supabase()
             else:
-                print(f"❌ Falha envio 90min: {msg}")
-                return False, f"Falha ao enviar e-mail de 90min: {msg}"
-        else:
-            return False, "Ainda não se passaram 90 minutos."
+                motoristas = []
+                st.warning("⚠️ Nenhum motorista encontrado no banco.")
 
-    except Exception as e:
-        print(f"Erro ao processar email 90min para ticket {ocorrencia.get('numero_ticket')}: {e}")
-        return False, f"Erro inesperado: {str(e)}"
+            opcoes_motoristas = motoristas + ["Outro (digitar manualmente)"]
+            motorista_opcao = st.selectbox("Motorista", options=opcoes_motoristas, index=None, key="motorista_opcao")
+            motorista = st.text_input("Digite o nome do motorista", key="motorista_manual") if motorista_opcao == "Outro (digitar manualmente)" else motorista_opcao
 
-def notificar_ocorrencias_abertas():
-    """Notifica clientes sobre ocorrências abertas há mais de 30 minutos e também aquelas com mais de 1h30."""
-    resultados = []
+            tipo = st.multiselect(
+                "Tipo de Ocorrência",
+                options=["Chegada no Local", "Pedido Bloqueado", "Aguardando Descarga", "Divergência"],
+                key="tipo_ocorrencia"
+            )
 
-    # 🔸 Etapa 1: e-mails de abertura (30min)
-    ocorrencias_30min_para_verificar = obter_ocorrencias_abertas_30min()
-    for ocorr in ocorrencias_30min_para_verificar:
-        sucesso, mensagem = verificar_e_enviar_email_abertura(ocorr)
-        if sucesso:
-            resultados.append({
-                "cliente": ocorr.get('cliente'),
-                "ticket": ocorr.get('numero_ticket', '-'),
-                "nota_fiscal": ocorr.get('nota_fiscal', '-'),
-                "status": "sucesso",
-                "mensagem": f"E-mail 30min: {mensagem}"
-            })
-        elif "E-mail de abertura já enviado" not in mensagem and "Ocorrência já finalizada" not in mensagem:
-             resultados.append({
-                "cliente": ocorr.get('cliente'),
-                "ticket": ocorr.get('numero_ticket', '-'),
-                "nota_fiscal": ocorr.get('nota_fiscal', '-'),
-                "status": "erro",
-                "mensagem": f"E-mail 30min: {mensagem}"
-            })
+            obs = st.text_area("Observações", key="observacoes")
+            responsavel = st.session_state.username
+            st.text_input("Quem está abrindo o ticket", value=responsavel, disabled=True)
 
-    # 🔹 Etapa 2: e-mails de 1h30
-    ocorrencias_90min_para_verificar = obter_ocorrencias_abertas_90min()
-    for ocorr in ocorrencias_90min_para_verificar:
-        sucesso, mensagem = verificar_e_enviar_email_90min(ocorr)
-        if sucesso:
-            resultados.append({
-                "cliente": ocorr.get('cliente'),
-                "ticket": ocorr.get('numero_ticket', '-'),
-                "nota_fiscal": ocorr.get('nota_fiscal', '-'),
-                "status": "sucesso",
-                "mensagem": f"E-mail 90min: {mensagem}"
-            })
-        elif "E-mail de 90min já enviado" not in mensagem and "Ocorrência já finalizada" not in mensagem:
-             resultados.append({
-                "cliente": ocorr.get('cliente'),
-                "ticket": ocorr.get('numero_ticket', '-'),
-                "nota_fiscal": ocorr.get('nota_fiscal', '-'),
-                "status": "erro",
-                "mensagem": f"E-mail 90min: {mensagem}"
-            })
+            # Buscar unidade do usuário logado
+            dados_usuario = supabase.table("usuarios").select("unidade").eq("nome_usuario", responsavel).execute().data
+            unidade_usuario = dados_usuario[0]["unidade"] if dados_usuario else "N/A"
+            st.text_input("Unidade", value=unidade_usuario, disabled=True)
 
-    return resultados
 
-def testar_conexao_smtp():
-    """Testa apenas a conexão com o servidor SMTP."""
-    try:
-        server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=5)
-        server.starttls()
-        server.login(EMAIL_REMETENTE, EMAIL_SENHA)
-        server.quit()
-        return True, "Conexão SMTP testada com sucesso!"
-    except socket.timeout:
-        return False, "Timeout ao conectar ao servidor SMTP. Possível bloqueio de firewall."
-    except smtplib.SMTPAuthenticationError:
-        return False, "Falha na autenticação. Verifique usuário e senha."
-    except smtplib.SMTPException as e:
-        return False, f"Erro SMTP: {e}"
-    except Exception as e:
-        return False, f"Erro desconhecido: {e}"
 
-# ====================================================================
-# 7. FUNÇÕES AUXILIARES DE EXIBIÇÃO (UI/HTML)
-# ====================================================================
+
+            # Inicializa somente se o campo ainda não tiver sido preenchido durante o uso do formulário
+            # Inicialização segura
+            if "data_abertura_manual" not in st.session_state:
+                st.session_state["data_abertura_manual"] = obter_data_hora_atual_brasil().date()
+            if "hora_abertura_manual" not in st.session_state:
+                st.session_state["hora_abertura_manual"] = obter_data_hora_atual_brasil().time()
+
+            col_data, col_hora = st.columns(2)
+            with col_data:
+                st.date_input(
+                    "Data de Abertura",
+                    key="data_abertura_manual",
+                    format="DD/MM/YYYY"
+                )
+            with col_hora:
+                st.time_input(
+                    "Hora de Abertura",
+                    key="hora_abertura_manual"
+                )
+
+            data_abertura_manual = st.session_state["data_abertura_manual"]
+            hora_abertura_manual = st.session_state["hora_abertura_manual"]
+
+
+
+        enviar = st.form_submit_button("Adicionar Ocorrência")
+
+        if enviar:
+            campos_obrigatorios = {
+                "Nota Fiscal": nf,
+                "Cliente": cliente,
+                "Focal Responsável": st.session_state["focal_responsavel"],
+                "Destinatário": destinatario,
+                "Cidade": cidade,
+                "Motorista": motorista,
+                "Tipo de Ocorrência": tipo,
+                "Responsável": responsavel
+            }
+
+            faltando = [campo for campo, valor in campos_obrigatorios.items() if not valor]
+
+            if nf_invalida:
+                st.error("Ocorrência não adicionada: Nota Fiscal deve conter apenas números.")
+            elif faltando:
+                st.error(f"❌ Preencha todos os campos obrigatórios: {', '.join(faltando)}")
+            elif not cliente:
+                st.error("❌ O campo 'Cliente' é obrigatório.")
+            else:
+                numero_ticket = obter_data_hora_atual_brasil().strftime("%Y%m%d%H%M%S%f")
+                data_abertura_manual_str = data_abertura_manual.strftime("%Y-%m-%d")
+                hora_abertura_manual_str = hora_abertura_manual.strftime("%H:%M:%S")
+
+                st.write("🧪 Será salvo:", data_abertura_manual_str, hora_abertura_manual_str)  # depuração
+
+                nova_ocorrencia = {
+                    "id": str(uuid.uuid4()),
+                    "numero_ticket": numero_ticket,
+                    "nota_fiscal": nf,
+                    "cliente": cliente,
+                    "focal": st.session_state["focal_responsavel"],
+                    "destinatario": destinatario,
+                    "cidade": cidade,
+                    "motorista": motorista,
+                    "tipo_de_ocorrencia": ", ".join(tipo),
+                    "observacoes": obs,
+                    "responsavel": responsavel,
+                    "data_abertura_manual": data_abertura_manual_str,
+                    "hora_abertura_manual": hora_abertura_manual_str,
+                    "ticket_unidade": unidade_usuario,
+                    "complementar": "",
+                    "permanencia": "",
+                    "imagem_url": "",
+                }
+
+                if imagem:
+                    try:
+                        nome_arquivo = f"{nova_ocorrencia['id']}_{imagem.name}"
+                        supabase.storage.from_("imagem-ticket").upload(
+                            nome_arquivo,
+                            imagem.read(),
+                            file_options={"content-type": imagem.type}
+                        )
+                        url_imagem = supabase.storage.from_("imagem-ticket").get_public_url(nome_arquivo)
+                        nova_ocorrencia["imagem_url"] = url_imagem
+                    except Exception as e:
+                        st.warning(f"⚠️ Falha ao enviar imagem: {e}")
+                #aqui
+                response = inserir_ocorrencia_supabase(nova_ocorrencia)
+
+                if response and response.data:
+                    
+                    # === INÍCIO DO DISPARO RETROATIVO ===
+                    try:
+                        print("💾 Ticket salvo. Verificando e-mails retroativos...")
+                        # Passamos a nova_ocorrencia. As funções acima agora lidam bem com ela.
+                        
+                        # 1. Verifica regra de 30 min (Se criado há 2h, vai disparar)
+                        verificar_e_enviar_email_abertura(nova_ocorrencia)
+                        
+                        # 2. Verifica regra de 90 min (Se criado há 2h, vai disparar TAMBÉM)
+                        verificar_e_enviar_email_90min(nova_ocorrencia)
+                        
+                    except Exception as e:
+                        print(f"❌ Erro crítico no disparo imediato: {e}")
+                    # === FIM DO DISPARO RETROATIVO ===
+
+                    nova_ocorrencia_local = nova_ocorrencia.copy()
+                    nova_ocorrencia_local["Data/Hora Finalização"] = ""
+                    st.session_state.ocorrencias_abertas.append(nova_ocorrencia_local)
+
+                    st.session_state["focal_responsavel"] = ""
+
+                    sucesso = st.empty()
+                    sucesso.success("✅ Ocorrência aberta com sucesso!")
+                    tm.sleep(1.5)
+                    sucesso.empty()
+
+                    # 🧹 Limpa todos os campos após sucesso
+                    campos_para_limpar = [
+                        "nf", "destinatario", "cliente_opcao", "cliente_manual",
+                        "cidade_opcao", "cidade_manual", "motorista_opcao", "motorista_manual",
+                        "tipo_ocorrencia", "observacoes", "imagem_ocorrencia",
+                        "data_abertura_manual", "hora_abertura_manual"
+                    ]
+                    for campo in campos_para_limpar:
+                        if campo in st.session_state:
+                            del st.session_state[campo]
+
+                    st.rerun()  # Recarrega a página
 
 # =========================
 #    FUNÇÃO CLASSIFICAÇÃO
@@ -1190,20 +1365,592 @@ def classificar_ocorrencia_por_tempo(data_str, hora_str):
             return "Acima de 90min", "#400A40"  # Roxo
     except Exception:
         return "Erro", "gray"
+    
 
-def seguro(valor, padrao="-"):
-    return html.escape(str(valor if valor is not None else padrao))
 
-def auto_sanitizar_ocorrencia(ocorr):
-    campos_texto = [
-        'numero_ticket', 'nota_fiscal', 'cliente', 'destinatario', 'focal', 'cidade',
-        'motorista', 'tipo_de_ocorrencia', 'responsavel', 'finalizado_por',
-        'permanencia_manual', 'complementar', 'Status', 'Cor'
-    ]
-    for campo in campos_texto:
-        if campo not in ocorr or ocorr[campo] is None:
-            ocorr[campo] = "-"
-    return ocorr
+
+#####################################
+#FUNÇÃO LIMPAR CARACTERES NOME FOTO
+#####################################
+
+def limpar_nome_arquivo(nome_original):
+    nome_limpo = re.sub(r'[^a-zA-Z0-9_.-]', '_', nome_original)
+    return nome_limpo
+
+
+# =========================
+#    FUNÇÕES DE E-MAIL
+# =========================
+
+def carregar_dados_clientes_email():
+    try:
+        response = supabase.table("clientes").select("cliente, enviar_para_email, email_copia").execute()
+        if response.data:
+            return {
+                item["cliente"]: {
+                    "principal": item.get("enviar_para_email", ""),
+                    "copia": item.get("email_copia", "")
+                }
+                for item in response.data if item.get("enviar_para_email")
+            }
+        else:
+            return {}
+    except Exception as e:
+        st.error(f"Erro ao carregar e-mails dos clientes: {e}")
+        return {}
+
+
+def obter_ocorrencias_abertas_30min():
+    """Obtém ocorrências abertas há mais de 30 minutos que ainda não receberam e-mail."""
+    try:
+        # Obter todas as ocorrências abertas que ainda não receberam e-mail
+        response = supabase.table("ocorrencias").select("*").eq("status", "Aberta").eq("email_enviado_abertura", False).execute()
+        ocorrencias = response.data
+        
+        # Filtrar ocorrências abertas há mais de 30 minutos
+        ocorrencias_30min = []
+        agora = obter_data_hora_atual_brasil()
+        
+        for ocorr in ocorrencias:
+            # Verificar se tem data e hora manual
+            if ocorr.get("data_abertura_manual") and ocorr.get("hora_abertura_manual"):
+                try:
+                    # Criar datetime a partir das strings de data e hora manual
+                    data_hora_abertura = criar_datetime_manual(
+                        ocorr["data_abertura_manual"], 
+                        ocorr["hora_abertura_manual"]
+                    )
+                    
+                    if data_hora_abertura:
+                        # Verificar se passou mais de 30 minutos
+                        diferenca = calcular_diferenca_tempo(data_hora_abertura, agora)
+                        if diferenca > timedelta(minutes=30):
+                            ocorrencias_30min.append(ocorr)
+                except Exception as e:
+                    st.error(f"Erro ao processar data/hora da ocorrência {ocorr.get('nota_fiscal', '-')}: {e}")
+        
+        return ocorrencias_30min
+    except Exception as e:
+        st.error(f"Erro ao obter ocorrências abertas: {e}")
+        return []
+
+def obter_ocorrencias_abertas_90min():
+    """Obtém ocorrências abertas há mais de 1h30 e que ainda não receberam o e-mail de 90 minutos."""
+    try:
+        response = supabase.table("ocorrencias") \
+            .select("*") \
+            .eq("status", "Aberta") \
+            .or_("email_90min_enviado.is.null,email_90min_enviado.eq.false") \
+            .execute()
+
+        agora = obter_data_hora_atual_brasil()
+        ocorrencias_validas = []
+
+        for ocorr in response.data or []:
+            if ocorr.get("data_abertura_manual") and ocorr.get("hora_abertura_manual"):
+                data_hora = criar_datetime_manual(
+                    ocorr["data_abertura_manual"],
+                    ocorr["hora_abertura_manual"]
+                )
+                if data_hora and calcular_diferenca_tempo(data_hora, agora) > timedelta(minutes=90):
+                    ocorrencias_validas.append(ocorr)
+
+        return ocorrencias_validas
+
+    except Exception as e:
+        st.error(f"Erro ao obter ocorrências de 90min: {e}")
+        return []
+
+
+
+
+
+
+
+def marcar_email_como_enviado(ocorrencia_id, tipo="abertura"):
+    """Marca a ocorrência como tendo recebido e-mail."""
+    try:
+        campo = "email_enviado_abertura" if tipo == "abertura" else "email_finalizacao_enviado"
+        response = supabase.table("ocorrencias").update({
+            campo: True
+        }).eq("id", ocorrencia_id).execute()
+        
+        return response.data is not None
+    except Exception as e:
+        st.error(f"Erro ao atualizar status de e-mail enviado: {e}")
+        return False
+
+
+def enviar_email_finalizacao(ocorrencia):
+    """Envia e-mail de finalização para o cliente, incluindo imagem se houver."""
+    try:
+        # Carregar dados do cliente
+        clientes_emails = carregar_dados_clientes_email()
+        cliente = ocorrencia.get('cliente')
+        
+        if cliente in clientes_emails:
+            email_info = clientes_emails[cliente]
+            email_principal = email_info['principal']
+            email_copia = email_info['copia']
+            
+            # Obter dados de abertura e finalização
+            data_abertura = f"{ocorrencia.get('data_abertura_manual', '-')} {ocorrencia.get('hora_abertura_manual', '-')}"
+            data_finalizacao = f"{ocorrencia.get('data_finalizacao_manual', '-')} {ocorrencia.get('hora_finalizacao_manual', '-')}"
+            
+            # Obter imagem (se houver)
+            imagem_url = ocorrencia.get("imagem_finalizacao_url", "")
+            if imagem_url:
+                imagem_html = f"""
+                <tr>
+                    <th>Imagem Ticket</th>
+                    <td><a href="{imagem_url}" target="_blank">Baixar Imagem</a></td>
+                </tr>
+                """
+            else:
+                imagem_html = "<tr><th>Imagem Ticket</th><td>Não Anexada</td></tr>"
+            
+            # Criar corpo do e-mail
+            corpo_html = f"""
+            <html>
+            <head>
+                <style>
+                    body {{ font-family: Arial, sans-serif; }}
+                    table {{ border-collapse: collapse; width: 100%; }}
+                    th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+                    th {{ background-color: #f2f2f2; }}
+                    .header {{ background-color: #4CAF50; color: white; padding: 10px; }}
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <h2>Notificação de Ocorrência Finalizada</h2>
+                </div>
+                <p>Prezado cliente <strong>{cliente}</strong>,</p>
+                <p>Informamos que a seguinte ocorrência foi finalizada:</p>
+                <table>
+                    <tr><th>Ticket</th><td>{ocorrencia.get('numero_ticket', '-')}</td></tr>
+                    <tr><th>Nota Fiscal</th><td>{ocorrencia.get('nota_fiscal', '-')}</td></tr>
+                    <tr><th>Destinatário</th><td>{ocorrencia.get('destinatario', '-')}</td></tr>
+                    <tr><th>Cidade</th><td>{ocorrencia.get('cidade', '-')}</td></tr>
+                    <tr><th>Motorista</th><td>{ocorrencia.get('motorista', '-')}</td></tr>
+                    <tr><th>Tipo</th><td>{ocorrencia.get('tipo_de_ocorrencia', '-')}</td></tr>
+                    <tr><th>Data/Hora Abertura</th><td>{data_abertura}</td></tr>
+                    <tr><th>Data/Hora Finalização</th><td>{data_finalizacao}</td></tr>
+                    <tr><th>Permanência</th><td>{ocorrencia.get('permanencia_manual', '-')}</td></tr>
+                    {imagem_html}
+                </table>
+                <p><strong>Complemento:</strong> {ocorrencia.get('complementar', 'Sem complemento.')}</p>
+                <p>Atenciosamente,<br>Equipe de Monitoramento ClikLog Transportes</p>
+            </body>
+            </html>
+            """
+
+            # Enviar e-mail (com imagem em anexo caso exista)
+            assunto = f"Notificação: Ocorrência Finalizada - {cliente} - NF {ocorrencia.get('nota_fiscal', '-')}"
+            sucesso, mensagem = enviar_email(email_principal, email_copia, assunto, corpo_html)
+            
+            if sucesso:
+                marcar_email_como_enviado(ocorrencia["id"], "finalizacao")
+
+                # Registrar no Supabase
+                supabase.table("emails_enviados").insert({
+                    "data_hora": obter_data_hora_atual_brasil().isoformat(),
+                    "tipo": "Finalização",
+                    "cliente": cliente,
+                    "email": email_principal,
+                    "ticket": ocorrencia.get('numero_ticket', '-'),
+                    "nota_fiscal": ocorrencia.get('nota_fiscal', '-'),
+                    "status": "Enviado"
+                }).execute()
+
+                return True, "E-mail de finalização enviado com sucesso"
+            else:
+                return False, mensagem
+        else:
+            return False, "Cliente não possui e-mail cadastrado"
+    except Exception as e:
+        return False, f"Erro ao enviar e-mail de finalização: {e}"
+
+
+def notificar_ocorrencias_abertas():
+    """Notifica clientes sobre ocorrências abertas há mais de 30 minutos e também aquelas com mais de 1h30."""
+    resultados = []
+
+    # 🔸 Etapa 1: e-mails de abertura (30min)
+    ocorrencias_30min = obter_ocorrencias_abertas_30min()
+    for ocorr in ocorrencias_30min:
+        sucesso, mensagem = verificar_e_enviar_email_abertura(ocorr)
+        resultados.append({
+            "cliente": ocorr.get('cliente'),
+            "ticket": ocorr.get('numero_ticket', '-'),
+            "nota_fiscal": ocorr.get('nota_fiscal', '-'),
+            "status": "sucesso" if sucesso else "erro",
+            "mensagem": mensagem
+        })
+
+    # 🔹 Etapa 2: e-mails de 1h30
+    ocorrencias_90min = obter_ocorrencias_abertas_90min()
+    for ocorr in ocorrencias_90min:
+        sucesso, mensagem = verificar_e_enviar_email_90min(ocorr)
+        resultados.append({
+            "cliente": ocorr.get('cliente'),
+            "ticket": ocorr.get('numero_ticket', '-'),
+            "nota_fiscal": ocorr.get('nota_fiscal', '-'),
+            "status": "sucesso" if sucesso else "erro",
+            "mensagem": f"E-mail 1h30: {mensagem}"
+        })
+
+    return resultados
+
+
+def obter_ocorrencias_90min():
+    """Obtém todas ocorrências abertas que ainda não receberam o e-mail de 90min e já passaram de 1h30."""
+    try:
+        response = supabase.table("ocorrencias") \
+            .select("*") \
+            .eq("status", "Aberta") \
+            .eq("email_90min_enviado", False) \
+            .execute()
+        
+        agora = obter_data_hora_atual_brasil()
+        ocorrencias_validas = []
+        
+        for ocorr in response.data:
+            if ocorr.get("data_abertura_manual") and ocorr.get("hora_abertura_manual"):
+                dt = criar_datetime_manual(ocorr["data_abertura_manual"], ocorr["hora_abertura_manual"])
+                if dt and calcular_diferenca_tempo(dt, agora) > timedelta(minutes=90):
+                    ocorrencias_validas.append(ocorr)
+        
+        return ocorrencias_validas
+    except Exception as e:
+        st.error(f"Erro ao obter ocorrências de 90min: {e}")
+        return []
+
+
+
+def testar_conexao_smtp():
+    """Testa apenas a conexão com o servidor SMTP."""
+    try:
+        # Tentar conectar ao servidor
+        server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=5)
+        
+        # Tentar iniciar TLS
+        server.starttls()
+        
+        # Tentar autenticar
+        server.login(EMAIL_REMETENTE, EMAIL_SENHA)
+        
+        # Fechar conexão
+        server.quit()
+        return True, "Conexão SMTP testada com sucesso!"
+    except socket.timeout:
+        return False, "Timeout ao conectar ao servidor SMTP. Possível bloqueio de firewall."
+    except smtplib.SMTPAuthenticationError:
+        return False, "Falha na autenticação. Verifique usuário e senha."
+    except smtplib.SMTPException as e:
+        return False, f"Erro SMTP: {e}"
+    except Exception as e:
+        return False, f"Erro desconhecido: {e}"
+    
+
+# Função para carregar ocorrências abertas
+@st.cache_data(ttl=420) # Cache válido por 7 minutos (420 segundos)
+def carregar_ocorrencias_abertas():
+    try:
+        if st.session_state.is_admin:
+            response = supabase.table("ocorrencias").select("*").eq("status", "Aberta").order("data_hora_abertura", desc=True).execute()
+        else:
+            dados_usuario = supabase.table("usuarios").select("unidade").eq("nome_usuario", st.session_state.username).execute().data
+            unidade_usuario = dados_usuario[0]["unidade"] if dados_usuario else None
+            response = supabase.table("ocorrencias").select("*").eq("status", "Aberta").eq("ticket_unidade", unidade_usuario).order("data_hora_abertura", desc=True).execute()
+        return response.data
+    except Exception as e:
+        st.error(f"Erro ao carregar ocorrências abertas: {e}")
+        return []
+
+
+# Função para carregar ocorrências por focal
+def carregar_ocorrencias_por_focal(focal=None):
+    try:
+        if st.session_state.is_admin:
+            response = supabase.table("ocorrencias").select("*").eq("status", "Aberta").eq("focal", focal).order("data_hora_abertura", desc=True).execute()
+        else:
+            dados_usuario = supabase.table("usuarios").select("unidade").eq("nome_usuario", st.session_state.username).execute().data
+            unidade_usuario = dados_usuario[0]["unidade"] if dados_usuario else None
+            response = supabase.table("ocorrencias").select("*").eq("status", "Aberta").eq("focal", focal).eq("ticket_unidade", unidade_usuario).order("data_hora_abertura", desc=True).execute()
+        return response.data
+    except Exception as e:
+        st.error(f"Erro ao carregar ocorrências por focal: {e}")
+        return []
+
+    
+
+# Função para obter lista de focais com contagem de tickets
+def obter_focais_com_contagem():
+    try:
+        ocorrencias = carregar_ocorrencias_abertas()
+        
+        # Agrupar por focal e contar
+        focais_contagem = {}
+        for ocorr in ocorrencias:
+            focal = ocorr.get('focal')
+            if focal:
+                if focal not in focais_contagem:
+                    focais_contagem[focal] = 0
+                focais_contagem[focal] += 1
+        
+        # Ordenar por contagem (decrescente)
+        focais_ordenados = sorted(focais_contagem.items(), key=lambda x: x[1], reverse=True)
+        
+        return focais_ordenados
+    except Exception as e:
+        st.error(f"Erro ao obter focais com contagem: {e}")
+        return []
+
+# Função para finalizar ocorrência com suporte a imagem na finalização
+def finalizar_ocorrencia(ocorr, complemento, data_finalizacao_manual, hora_finalizacao_manual, imagem_url_finalizacao="", observacao_final="", numero_manifesto_val=""):
+    try:
+        data_abertura_manual = ocorr.get("data_abertura_manual")
+        hora_abertura_manual = ocorr.get("hora_abertura_manual")
+        
+        if not data_abertura_manual or not hora_abertura_manual:
+            return False, "Data/hora de abertura manual ausente. Não é possível calcular a permanência."
+        
+        try:
+            # 🔧 Etapa 1: combinar data e hora inseridas pelo usuário
+            data_finalizacao_obj = data_finalizacao_manual
+            data_hora_finalizacao = datetime.combine(data_finalizacao_obj, hora_finalizacao_manual)
+
+            # 🧪 Diagnóstico: antes do fuso
+            st.write("💡 Data final manual (antes do fuso):", data_hora_finalizacao.strftime("%Y-%m-%d %H:%M:%S"))
+
+            # 🔧 Etapa 2: garantir que o fuso horário brasileiro seja aplicado corretamente
+            if data_hora_finalizacao.tzinfo is None:
+                data_hora_finalizacao = FUSO_HORARIO_BRASIL.localize(data_hora_finalizacao)
+            else:
+                data_hora_finalizacao = data_hora_finalizacao.astimezone(FUSO_HORARIO_BRASIL)
+
+            # 🧪 Diagnóstico: depois do fuso
+            st.write("🕓 Data final (com fuso):", data_hora_finalizacao.strftime("%Y-%m-%d %H:%M:%S %Z"))
+            
+            # 🔧 Etapa 3: criar datetime de abertura
+            data_hora_abertura = criar_datetime_manual(data_abertura_manual, hora_abertura_manual)
+            if not data_hora_abertura:
+                return False, "Erro ao criar datetime a partir de data/hora de abertura manual."
+            
+            # 🔒 Verificação de consistência
+            if data_hora_finalizacao < data_hora_abertura:
+                return False, "Data/hora de finalização não pode ser menor que a data/hora de abertura."
+            
+            # 🔢 Calcular permanência
+            delta = calcular_diferenca_tempo(data_hora_abertura, data_hora_finalizacao)
+            total_segundos = int(delta.total_seconds())
+            horas = total_segundos // 3600
+            minutos = (total_segundos % 3600) // 60
+            segundos = total_segundos % 60
+            permanencia_manual = f"{horas:02d}:{minutos:02d}:{segundos:02d}"
+
+            # 🔄 Preparar dados para o banco
+            data_finalizacao_banco = data_hora_finalizacao.strftime("%Y-%m-%d")
+            hora_finalizacao_banco = data_hora_finalizacao.strftime("%H:%M:%S")
+
+            # 💾 Atualizar ocorrência no Supabase
+            response = supabase.table("ocorrencias").update({
+                "data_hora_finalizacao": data_hora_finalizacao.strftime("%Y-%m-%d %H:%M:%S"),
+                "finalizado_por": st.session_state.username,
+                "complementar": complemento,
+                "status": "Finalizada",
+                "permanencia_manual": permanencia_manual,
+                "data_finalizacao_manual": data_finalizacao_banco,
+                "hora_finalizacao_manual": hora_finalizacao_banco,
+                "email_finalizacao_enviado": False,
+                "observacao_final": observacao_final,
+                "numero_manifesto": numero_manifesto_val, 
+                "imagem_finalizacao_url": imagem_url_finalizacao
+            }).eq("id", ocorr["id"]).execute()
+            
+            if response and response.data:
+                # 📧 Enviar e-mail de finalização
+                ocorr_atualizada = response.data[0]
+                enviar_email_finalizacao(ocorr_atualizada)
+                
+                return True, "Ocorrência finalizada com sucesso!"
+            else:
+                return False, "Erro ao salvar a finalização no banco de dados."
+
+        except ValueError:
+            return False, "Formato inválido para data/hora de finalização. Use DD-MM-AAAA para a data e HH:MM para a hora."
+        except Exception as e:
+            return False, f"Erro ao calcular ou salvar permanência manual: {e}"
+
+    except Exception as e:
+        return False, f"Erro ao finalizar ocorrência: {e}"
+
+
+# =========================
+#     ABA 2 - EM ABERTO (COM CONTAGEM DINÂMICA)
+# =========================
+if st.session_state.aba_ativa == "aba2":
+    # 1. Definimos o Layout do Cabeçalho
+    col_titulo, col_botao = st.columns([5, 1])
+
+    # Botão de Atualizar (na direita)
+    with col_botao:
+        if st.button("🔄 Atualizar", key="btn_atualizar_abertas", use_container_width=True):
+            carregar_ocorrencias_abertas.clear() 
+            st.session_state.ocorrencias_abertas = carregar_ocorrencias_abertas()
+
+    # CRUCIAL: Criamos um espaço vazio (placeholder) onde o título vai ficar.
+    # Vamos preencher isso SÓ DEPOIS de filtrar os dados para ter o número certo.
+    titulo_placeholder = col_titulo.empty()
+
+    # 2. Carregamento de Dados
+    if "ocorrencias_abertas" not in st.session_state:
+        st.session_state.ocorrencias_abertas = carregar_ocorrencias_abertas()
+
+    ocorrencias_abertas = st.session_state.get("ocorrencias_abertas", [])
+
+    # ⏱️ Auto refresh a cada 7 minutos
+    st_autorefresh(interval=7 * 60 * 1000, key="auto_refresh_abertas")
+
+    
+    
+    # 3. Filtros
+    # Prepara lista de focais únicos
+    lista_focais = sorted(set(
+        (ocorr.get('focal') or 'Sem Focal').strip()
+        for ocorr in ocorrencias_abertas
+    ))
+
+    # Renderiza o Selectbox
+    focal_selecionado = st.selectbox(
+        "🔎 Filtrar por Focal:",
+        options=["Todos"] + lista_focais,
+        index=0
+    )
+
+    # 4. Aplica o Filtro
+    if focal_selecionado != "Todos":
+        ocorrencias_filtradas = [
+            ocorr for ocorr in ocorrencias_abertas
+            if (ocorr.get('focal') or 'Sem Focal').strip() == focal_selecionado
+        ]
+    else:
+        ocorrencias_filtradas = ocorrencias_abertas
+
+    # 5. ATUALIZA O TÍTULO COM O TOTAL DO FILTRO
+    qtd_exibida = len(ocorrencias_filtradas)
+    titulo_placeholder.header(f"Ocorrências em Aberto ({qtd_exibida})")
+
+    # 6. Exibição dos Cards
+    if not ocorrencias_filtradas:
+        st.info("ℹ️ Nenhuma ocorrência encontrada para este filtro.")
+    else:
+        num_colunas = 4
+        colunas = st.columns(num_colunas)
+
+        for idx, ocorr in enumerate(ocorrencias_filtradas):
+            # Lógica de Cores e Status
+            status = "Data manual ausente"
+            cor = "gray"
+            abertura_manual_formatada = "Não informada"
+            data_abertura_manual = ocorr.get("data_abertura_manual")
+            hora_abertura_manual = ocorr.get("hora_abertura_manual")
+
+            if data_abertura_manual and hora_abertura_manual:
+                try:
+                    dt_manual = criar_datetime_manual(data_abertura_manual, hora_abertura_manual)
+                    if dt_manual:
+                        abertura_manual_formatada = dt_manual.strftime("%d-%m-%Y %H:%M:%S")
+                        status, cor = classificar_ocorrencia_por_tempo(data_abertura_manual, hora_abertura_manual)
+                    else:
+                        status = "Erro"
+                except Exception as e:
+                    status = "Erro"
+
+            # Renderiza o Card
+            with colunas[idx % num_colunas]:
+                safe_idx = f"{idx}_{ocorr.get('nota_fiscal', '')}"
+                email_enviado = ocorr.get('email_enviado_abertura', False)
+                imagem_abertura_url = ocorr.get('imagem_url', '')
+                
+                # HTML do Card
+                st.markdown(
+                    f"""
+                    <div style='background-color:{cor};padding:10px;border-radius:10px;color:white;
+                    box-shadow: 0 4px 10px rgba(0,0,0,0.3);margin-bottom:5px;min-height:250px;font-size:15px;'>
+                    <strong>Ticket #:</strong> {str(ocorr.get('numero_ticket', 'N/A'))[-5:]}<br>
+                    {f'📸 Abertura: <a href="{imagem_abertura_url}" target="_blank" style="text-decoration:underline;color:white;">Baixar</a><br>' if imagem_abertura_url else ''}
+                    <strong>Status:</strong> {status}<br>
+                    {'📧 E-mail enviado<br>' if email_enviado else ''}
+                    <strong>NF:</strong> {ocorr.get('nota_fiscal', '-')}<br>
+                    <strong>Cliente:</strong> {ocorr.get('cliente', '-')}<br>
+                    <strong>Destinatário:</strong> {ocorr.get('destinatario', '-')}<br>
+                    <strong>Focal:</strong> {ocorr.get('focal', '-')}<br>
+                    <strong>Cidade:</strong> {ocorr.get('cidade', '-')}<br>
+                    <strong>Motorista:</strong> {ocorr.get('motorista', '-')}<br>
+                    <strong>Tipo:</strong> {ocorr.get('tipo_de_ocorrencia', '-')}<br>
+                    <strong>Aberto por:</strong> {ocorr.get('responsavel', '-')}<br>
+                    <strong>Data Abertura:</strong> {abertura_manual_formatada.split(" ")[0] if abertura_manual_formatada != "Não informada" else 'Não informada'}<br>
+                    <strong>Hora Abertura:</strong> {hora_abertura_manual or 'Não informada'}<br>
+                    <strong>Observações:</strong> {ocorr.get('observacoes', '')}<br>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+                # Botão/Formulário de Finalizar
+                if st.session_state.get("ticket_em_finalizacao") == safe_idx:
+                    with st.form(f"form_{safe_idx}"):
+                        chave_data = f"data_final_{safe_idx}"
+                        chave_hora = f"hora_final_{safe_idx}"
+
+                        if chave_data not in st.session_state or not isinstance(st.session_state[chave_data], date):
+                            st.session_state[chave_data] = obter_data_hora_atual_brasil().date()
+                        if chave_hora not in st.session_state or not isinstance(st.session_state[chave_hora], time):
+                            st.session_state[chave_hora] = obter_data_hora_atual_brasil().time()
+
+                        col_data, col_hora = st.columns(2)
+                        with col_data: st.date_input("Data Final", key=chave_data, format="DD/MM/YYYY")
+                        with col_hora: st.time_input("Hora Final", key=chave_hora)
+
+                        complemento = st.text_input("Complementar", key=f"complemento_final_{safe_idx}")
+                        numero_manifesto = st.text_input("N° Manifesto", key=f"numero_manifesto_final_{safe_idx}")
+                        observacao_final = st.text_input("Obs Final", key=f"observacao_final_{safe_idx}")
+                        imagem_finalizacao = st.file_uploader("Anexar img finalização", type=["png", "jpg", "jpeg"], key=f"imagem_finalizacao_{safe_idx}")
+
+                        if st.form_submit_button("Concluir Finalização"):
+                            if not complemento.strip():
+                                st.warning("Complementar obrigatório.")
+                            else:
+                                st.toast("Finalizando...")
+                                imagem_url_finalizacao = ""
+                                if imagem_finalizacao:
+                                    try:
+                                        nome_arquivo = f"{ocorr['id']}_final_{limpar_nome_arquivo(imagem_finalizacao.name)}"
+                                        supabase.storage.from_("imagens-finalizacao").upload(
+                                            nome_arquivo, imagem_finalizacao.read(), file_options={"content-type": imagem_finalizacao.type}
+                                        )
+                                        imagem_url_finalizacao = supabase.storage.from_("imagens-finalizacao").get_public_url(nome_arquivo)
+                                    except: pass
+
+                                sucesso, mensagem = finalizar_ocorrencia(
+                                    ocorr, complemento, st.session_state[chave_data], st.session_state[chave_hora],
+                                    imagem_url_finalizacao, observacao_final, numero_manifesto
+                                )
+
+                                if sucesso:
+                                    st.success("Finalizado!")
+                                    st.session_state.ticket_em_finalizacao = None
+                                    tm.sleep(1)
+                                    st.rerun()
+                                else: st.error(mensagem)
+                else:
+                    if st.button("Finalizar", key=f"btn_finalizar_{safe_idx}"):
+                        st.session_state.ticket_em_finalizacao = safe_idx
+                        st.rerun()
+
+
 
 # =============================== 
 #    FUNÇÃO CARREGAR FINALIZADAS 
@@ -1221,1341 +1968,728 @@ def carregar_ocorrencias_finalizadas():
     except Exception as e:
         st.error(f"Erro ao carregar ocorrências finalizadas: {e}")
         return []
-
-# ====================================================================
-# 8. INTERFACE DE LOGIN (Fluxo inicial do aplicativo)
-# ====================================================================
-
-def login():
-    login_cookie = cookies.get("login")
-    username_cookie = cookies.get("username")
-    is_admin_cookie = cookies.get("is_admin")
-    expiry_time_cookie = cookies.get("expiry_time")
-    classe_cookie = cookies.get("classe")  # Pega a classe do cookie
-
-    # Verifica se já está logado via cookie e se o cookie não expirou
-    if login_cookie and username_cookie and not is_cookie_expired(expiry_time_cookie):
-        st.session_state.login = True
-        st.session_state.username = username_cookie
-        st.session_state.is_admin = is_admin_cookie == "True"
-        st.session_state.classe = classe_cookie
-        return  # Sai da função, usuário já logado
-
-    # --- CSS responsivo ---
-    st.markdown(
-        f"""
-        <style>
-        .login-header {{
-            width: 100%;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 20px 0;
-            margin-bottom: 30px;
-        }}
-
-        .login-header img {{
-            max-width: 500px;
-            height: auto;
-        }}
-
-        .login-title {{
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
-            color: #666;
-            font-size: 1.8rem; /* escala com zoom */
-            margin-top: 15px;
-        }}
-
-        .login-title img {{
-            width: 60px;
-            height: 30px;
-        }}
-        </style>
-
-        <div class="login-header">
-            <img src="data:image/png;base64,{img_base64_logo_principal}" alt="Logo Principal">
-            <div class="login-title">
-                Sistema de Monitoramento ClickLog Transportes by F4Stay
-                <img src="data:image/png;base64,{img_base64_fa}" alt="Logo FA">
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    # Linha 2 → só para o formulário de login
-    form_col1, form_col2, form_col3 = st.columns([0.6, 1, 0.6])
-    with form_col2:
-        st.markdown("#### 🔐 Login")
-        nome = st.text_input("Usuário").strip()
-        senha = st.text_input("Senha", type="password").strip()
-
-        if st.button("Entrar"):
-            usuario = autenticar_usuario(nome, senha)
-            if usuario:
-                # Armazena as informações no cookie
-                cookies["login"] = "True"
-                cookies["username"] = usuario["nome_usuario"]
-                cookies["is_admin"] = str(usuario.get("is_admin", False))
-                cookies["classe"] = usuario.get("classe", "colaborador")
-
-                # Define o tempo de expiração do cookie (24 horas)
-                expiry = datetime.now(timezone.utc) + timedelta(hours=24) # Mantive 24h, mas seu código anterior tinha 8h em uma seção. Verifique qual é o desejado.
-                cookies["expiry_time"] = expiry.strftime("%Y-%m-%d %H:%M:%S")
-
-                # Armazena as informações no st.session_state
-                st.session_state.login = True
-                st.session_state.username = usuario["nome_usuario"]
-                st.session_state.is_admin = usuario.get("is_admin", False)
-                st.session_state.classe = usuario.get("classe", "colaborador")
-
-                # Verifica se o usuário precisa alterar a senha
-                if usuario.get("precisa_alterar_senha") is True:
-                    st.warning("🔐 Você deve alterar sua senha antes de continuar.")
-                    st.stop()
-
-                st.rerun()  # Atualiza a interface após login
-            else:
-                st.error("🛑 Usuário ou senha incorretos.")
-
-    st.stop() # Impede que o código continue sendo executado antes do login
-
-
-# ====================================================================
-# 9. INICIALIZAÇÃO DO ESTADO DA SESSÃO (st.session_state)
-# ====================================================================
-
-# --- Chama login antes de qualquer coisa ---
-login()
-
-# --- ESTADOS DE SESSÃO ---
-if "login" not in st.session_state:
-    st.session_state.login = False
-if "username" not in st.session_state:
-    st.session_state.username = None
-if "is_admin" not in st.session_state:
-    st.session_state.is_admin = False # Default para não-admin
-if "classe" not in st.session_state:
-    st.session_state.classe = "colaborador" # Classe padrão
-if "unidade_usuario" not in st.session_state:
-    st.session_state.unidade_usuario = "N/A" # Unidade padrão
-if "ocorrencias_abertas" not in st.session_state:
-    st.session_state.ocorrencias_abertas = []
-if "ocorrencias_finalizadas" not in st.session_state:
-    st.session_state.ocorrencias_finalizadas = []
-if "historico_emails" not in st.session_state:
-    st.session_state.historico_emails = []
-if "focal_selecionado" not in st.session_state:
-    st.session_state.focal_selecionado = None
-if "tempo_envio_email" not in st.session_state:
-    st.session_state.tempo_envio_email = carregar_tempo_envio_email() # Carrega o valor configurado
-
-# ====================================================================
-# 10. LÓGICA PRINCIPAL DO APLICATIVO (APÓS LOGIN)
-# ====================================================================
-
-if st.session_state.get("login", False):
-    # --- Cabeçalho responsivo (centralizado e rola junto com a página) ---
-    st.markdown(
-        f"""
-        <style>
-        .header-container {{
-            width: 100%;
-            background-color: dark;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 10px 0 20px 0;
-            margin-bottom: 20px;
-        }}
-
-        .header-container img {{
-            max-width: 380px;
-            height: auto;
-        }}
-
-        .header-title {{
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            color: #666;
-            font-size: 1.3rem;  /* escala com zoom */
-            margin-top: 10px;
-        }}
-
-        .header-title img {{
-            width: 40px;
-            height: 40px;
-        }}
-        </style>
-
-        <div class="header-container">
-            <img src="data:image/png;base64,{img_base64_logo_principal}" alt="Logo Principal">
-            <div class="header-title">
-                Sistema de Monitoramento ClickLog Transportes by F4Stay
-                <img src="data:image/png;base64,{img_base64_fa}" alt="Logo FA">
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    # 🔹 Linha com texto de boas-vindas e botão de logout
-    col_welcome_text, col_logout_button = st.columns([5, 0.5])
-    with col_welcome_text:
-        st.markdown(f"👋 **Bem-vindo, {st.session_state.get('username','Usuário')}!**")
-
-    with col_logout_button:
-        if st.button("🚪 Sair"):
-            for key in ["login", "username", "is_admin", "expiry_time", "classe"]: # Adicionei 'classe' para limpar também
-                cookies[key] = ""
-            st.session_state.login = False
-            st.rerun()
-
-    st.markdown("---")  # linha divisória
-
-    # =============================
-    # NAVEGAÇÃO ENTRE ABAS COM RADIO
-    # =============================
-
-    abas_admin = {
-        "📝 Nova Ocorrência": "aba1",
-        "📌 Ocorrências em Aberto": "aba2",
-        "✅ Ocorrências Finalizadas": "aba3",
-        "📊 Configurações": "aba4",
-        "📧 Notificações por E-mail": "aba6",
-        "🔄 Cadastros": "aba7",
-        "📊 Estatística": "aba8"
-    }
-
-    abas_usuario = {
-        "📝 Nova Ocorrência": "aba1",
-        "📌 Ocorrências em Aberto": "aba2",
-        "✅ Ocorrências Finalizadas": "aba3",
-        "📊 Configurações": "aba4",
-        "🔄 Cadastros": "aba7",
-        "📊 Estatística": "aba8"
-    }
-
-    current_user_abas_map = abas_admin if st.session_state.is_admin else abas_usuario
-
-    # --- INICIALIZAÇÃO DA ABA ATIVA (AGORA DE FORMA MAIS ROBUSTA) ---
-    # Só define a aba_ativa se ainda não existir
-    if "aba_ativa" not in st.session_state:
-        st.session_state.aba_ativa = "aba1"  # valor inicial apenas na 1ª execução
-
-    # Mapeia o nome da aba ativa para o índice correspondente no rádio
-    try:
-        current_tab_name = next(key for key, value in current_user_abas_map.items() if value == st.session_state.aba_ativa)
-        initial_index = list(current_user_abas_map.keys()).index(current_tab_name)
-    except (StopIteration, ValueError):
-        initial_index = 0 # Valor padrão (primeira aba) se não for encontrado
-
-    # Exibe o menu lateral
-    aba_nome = st.sidebar.radio("📁 Menu", list(current_user_abas_map.keys()), key="menu_abas", index=initial_index)
-
-    # Salva qual aba está ativa
-    st.session_state.aba_ativa = current_user_abas_map[aba_nome]
-
-    # --- ADIÇÃO CRÍTICA PARA ENVIO DE E-MAILS PERIÓDICO AUTOMÁTICO ---
-    # Esta seção será executada toda vez que o script do Streamlit for re-executado (incluindo pelo st_autorefresh).
-    if st.session_state.aba_ativa == "aba2" and st.session_state.get("login", False):
-        agora = datetime.now()
-        if "ultima_verificacao_email" not in st.session_state:
-            st.session_state.ultima_verificacao_email = agora - timedelta(minutes=2) # Garante que rode na primeira vez
-
-        # Verifique se já passou tempo suficiente desde a última verificação
-        if agora - st.session_state.ultima_verificacao_email >= timedelta(minutes=1): # Ajuste o intervalo conforme a necessidade
-            print("📢 Aba 'Ocorrências em Aberto' ativa. Executando verificação e envio de e-mails periódicos...")
-            try:
-                # A função notificar_ocorrencias_abertas() já cuida de tudo
-                resultados_notificacao = notificar_ocorrencias_abertas()
-                
-                # feedback visual para o usuário (opcional, pode ser muito para cada refresh)
-                # if resultados_notificacao:
-                #     for res in resultados_notificacao:
-                #         if res["status"] == "sucesso":
-                #             st.toast(f"✅ {res['mensagem']} para {res['cliente']} - Ticket {res['ticket']}")
-                #         elif res["status"] == "erro":
-                #             st.toast(f"❌ {res['mensagem']} para {res['cliente']} - Ticket {res['ticket']}")
-                
-                st.session_state.ultima_verificacao_email = agora # Atualiza o timestamp da última verificação
-            except Exception as e:
-                print(f"❌ Erro ao executar notificação periódica: {e}")
-
-    # =========================
-    #     ABA 1 - NOVA OCORRENCIA
-    # =========================
-    if st.session_state.aba_ativa == "aba1":
-        st.header("Nova Ocorrência")
-
-        # Definindo sessão focal_responsavel
-        if "focal_responsavel" not in st.session_state:
-            st.session_state["focal_responsavel"] = ""
-
-        # Formulário para nova ocorrência
-        with st.form("form_nova_ocorrencia", clear_on_submit=True):
-            col1, col2 = st.columns(2)
-
-            with col1:
-                nf = st.text_input("Nota Fiscal", key="nf")
-                nf_invalida = nf != "" and not nf.isdigit()
-                if nf_invalida:
-                    st.error("Por favor, insira apenas números na Nota Fiscal.")
-
-                destinatario = st.text_input("Destinatário", key="destinatario")
-
-                cliente_opcao = st.selectbox("Cliente", options=clientes + ["Outro ()"], index=None, key="cliente_opcao")
-                cliente = st.text_input("Digite o nome do cliente", key="cliente_manual") if cliente_opcao == "Outro ()" else cliente_opcao
-
-                if cliente_opcao and cliente_opcao in cliente_to_focal:
-                    st.session_state["focal_responsavel"] = cliente_to_focal[cliente_opcao]
-                elif cliente_opcao:
-                    st.session_state["focal_responsavel"] = ""
-
-                cidade_opcao = st.selectbox("Cidade", options=cidades + ["Outro (digitar manualmente)"], index=None, key="cidade_opcao")
-                cidade = st.text_input("Digite o nome da cidade", key="cidade_manual") if cidade_opcao == "Outro (digitar manualmente)" else cidade_opcao
-
-                imagem = st.file_uploader("📎 Anexar imagem (opcional)", type=["png", "jpg", "jpeg"], key="imagem_ocorrencia")
-
-            with col2:
-                # Motoristas carregados globalmente no início
-                opcoes_motoristas = motoristas + ["Outro (digitar manualmente)"]
-                motorista_opcao = st.selectbox("Motorista", options=opcoes_motoristas, index=None, key="motorista_opcao")
-                motorista = st.text_input("Digite o nome do motorista", key="motorista_manual") if motorista_opcao == "Outro (digitar manualmente)" else motorista_opcao
-
-                tipo = st.multiselect(
-                    "Tipo de Ocorrência",
-                    options=["Chegada no Local", "Pedido Bloqueado", "Aguardando Descarga", "Divergência"],
-                    key="tipo_ocorrencia"
-                )
-
-                obs = st.text_area("Observações", key="observacoes")
-                responsavel = st.session_state.username
-                st.text_input("Quem está abrindo o ticket", value=responsavel, disabled=True)
-
-                # Buscar unidade do usuário logado
-                dados_usuario = supabase.table("usuarios").select("unidade").eq("nome_usuario", responsavel).execute().data
-                unidade_usuario = dados_usuario[0]["unidade"] if dados_usuario else "N/A"
-                st.text_input("Unidade", value=unidade_usuario, disabled=True)
-
-                # Inicializa somente se o campo ainda não tiver sido preenchido durante o uso do formulário
-                # Inicialização segura
-                if "data_abertura_manual" not in st.session_state:
-                    st.session_state["data_abertura_manual"] = obter_data_hora_atual_brasil().date()
-                if "hora_abertura_manual" not in st.session_state:
-                    st.session_state["hora_abertura_manual"] = obter_data_hora_atual_brasil().time()
-
-                col_data, col_hora = st.columns(2)
-                with col_data:
-                    st.date_input(
-                        "Data de Abertura",
-                        key="data_abertura_manual",
-                        format="DD/MM/YYYY"
-                    )
-                with col_hora:
-                    st.time_input(
-                        "Hora de Abertura",
-                        key="hora_abertura_manual"
-                    )
-
-                data_abertura_manual = st.session_state["data_abertura_manual"]
-                hora_abertura_manual = st.session_state["hora_abertura_manual"]
-
-            enviar = st.form_submit_button("Adicionar Ocorrência")
-
-            if enviar:
-                campos_obrigatorios = {
-                    "Nota Fiscal": nf,
-                    "Cliente": cliente,
-                    "Focal Responsável": st.session_state["focal_responsavel"],
-                    "Destinatário": destinatario,
-                    "Cidade": cidade,
-                    "Motorista": motorista,
-                    "Tipo de Ocorrência": tipo,
-                    "Responsável": responsavel
-                }
-
-                faltando = [campo for campo, valor in campos_obrigatorios.items() if not valor]
-
-                if nf_invalida:
-                    st.error("Ocorrência não adicionada: Nota Fiscal deve conter apenas números.")
-                elif faltando:
-                    st.error(f"❌ Preencha todos os campos obrigatórios: {', '.join(faltando)}")
-                elif not cliente:
-                    st.error("❌ O campo 'Cliente' é obrigatório.")
-                else:
-                    numero_ticket = obter_data_hora_atual_brasil().strftime("%Y%m%d%H%M%S%f")
-                    data_abertura_manual_str = data_abertura_manual.strftime("%Y-%m-%d")
-                    hora_abertura_manual_str = hora_abertura_manual.strftime("%H:%M:%S")
-
-                    # st.write("🧪 Será salvo:", data_abertura_manual_str, hora_abertura_manual_str)  # depuração
-
-                    nova_ocorrencia = {
-                        "id": str(uuid.uuid4()),
-                        "numero_ticket": numero_ticket,
-                        "nota_fiscal": nf,
-                        "cliente": cliente,
-                        "focal": st.session_state["focal_responsavel"],
-                        "destinatario": destinatario,
-                        "cidade": cidade,
-                        "motorista": motorista,
-                        "tipo_de_ocorrencia": ", ".join(tipo),
-                        "observacoes": obs,
-                        "responsavel": responsavel,
-                        "data_abertura_manual": data_abertura_manual_str,
-                        "hora_abertura_manual": hora_abertura_manual_str,
-                        "ticket_unidade": unidade_usuario,
-                        "complementar": "",
-                        "permanencia": "",
-                        "imagem_url": "",
-                    }
-
-                    if imagem:
-                        try:
-                            nome_arquivo = f"{nova_ocorrencia['id']}_{imagem.name}"
-                            supabase.storage.from_("imagem-ticket").upload(
-                                nome_arquivo,
-                                imagem.read(),
-                                file_options={"content-type": imagem.type}
-                            )
-                            url_imagem = supabase.storage.from_("imagem-ticket").get_public_url(nome_arquivo)
-                            nova_ocorrencia["imagem_url"] = url_imagem
-                        except Exception as e:
-                            st.warning(f"⚠️ Falha ao enviar imagem: {e}")
-                    
-                    response = inserir_ocorrencia_supabase(nova_ocorrencia)
-
-                    if response and response.data:
-                        
-                        # === INÍCIO DO DISPARO RETROATIVO ===
-                        # Se você está criando a ocorrência com data/hora manual no passado,
-                        # é importante que as funções de notificação sejam chamadas AQUI,
-                        # pois elas já farão a verificação de tempo e o envio, se for o caso.
-                        try:
-                            print("💾 Ticket salvo. Verificando e-mails retroativos...")
-                            # Passamos a nova_ocorrencia. As funções acima agora lidam bem com ela.
-                            
-                            # 1. Verifica regra de 30 min (Se criado há 2h, vai disparar)
-                            verificar_e_enviar_email_abertura(nova_ocorrencia)
-                            
-                            # 2. Verifica regra de 90 min (Se criado há 2h, vai disparar TAMBÉM)
-                            verificar_e_enviar_email_90min(nova_ocorrencia)
-                            
-                        except Exception as e:
-                            print(f"❌ Erro crítico no disparo imediato: {e}")
-                        # === FIM DO DISPARO RETROATIVO ===
-
-                        nova_ocorrencia_local = nova_ocorrencia.copy()
-                        nova_ocorrencia_local["Data/Hora Finalização"] = ""
-                        st.session_state.ocorrencias_abertas.append(nova_ocorrencia_local)
-
-                        st.session_state["focal_responsavel"] = ""
-
-                        sucesso = st.empty()
-                        sucesso.success("✅ Ocorrência aberta com sucesso!")
-                        tm.sleep(1.5)
-                        sucesso.empty()
-
-                        # 🧹 Limpa todos os campos após sucesso
-                        campos_para_limpar = [
-                            "nf", "destinatario", "cliente_opcao", "cliente_manual",
-                            "cidade_opcao", "cidade_manual", "motorista_opcao", "motorista_manual",
-                            "tipo_ocorrencia", "observacoes", "imagem_ocorrencia",
-                            "data_abertura_manual", "hora_abertura_manual"
-                        ]
-                        for campo in campos_para_limpar:
-                            if campo in st.session_state:
-                                del st.session_state[campo]
-
-                        st.rerun()  # Recarrega a página
-
-    # =========================
-    #     ABA 2 - EM ABERTO (COM CONTAGEM DINÂMICA)
-    # =========================
-    if st.session_state.aba_ativa == "aba2":
-        # 1. Definimos o Layout do Cabeçalho
-        col_titulo, col_botao = st.columns([5, 1])
-
-        # Botão de Atualizar (na direita)
-        with col_botao:
-            if st.button("🔄 Atualizar", key="btn_atualizar_abertas", use_container_width=True):
-                carregar_ocorrencias_abertas.clear() # Limpa o cache para recarregar
-                st.session_state.ocorrencias_abertas = carregar_ocorrencias_abertas()
-
-        # CRUCIAL: Criamos um espaço vazio (placeholder) onde o título vai ficar.
-        # Vamos preencher isso SÓ DEPOIS de filtrar os dados para ter o número certo.
-        titulo_placeholder = col_titulo.empty()
-
-        # 2. Carregamento de Dados
-        if "ocorrencias_abertas" not in st.session_state:
-            st.session_state.ocorrencias_abertas = carregar_ocorrencias_abertas()
-
-        ocorrencias_abertas = st.session_state.get("ocorrencias_abertas", [])
-
-        # ⏱️ Auto refresh a cada 7 minutos
-        st_autorefresh(interval=7 * 60 * 1000, key="auto_refresh_abertas")
-        
-        # 3. Filtros
-        # Prepara lista de focais únicos
-        lista_focais = sorted(set(
-            (ocorr.get('focal') or 'Sem Focal').strip()
-            for ocorr in ocorrencias_abertas
-        ))
-
-        # Renderiza o Selectbox
-        focal_selecionado = st.selectbox(
-            "🔎 Filtrar por Focal:",
-            options=["Todos"] + lista_focais,
-            index=0
-        )
-
-        # 4. Aplica o Filtro
-        if focal_selecionado != "Todos":
-            ocorrencias_filtradas = [
-                ocorr for ocorr in ocorrencias_abertas
-                if (ocorr.get('focal') or 'Sem Focal').strip() == focal_selecionado
-            ]
-        else:
-            ocorrencias_filtradas = ocorrencias_abertas
-
-        # 5. ATUALIZA O TÍTULO COM O TOTAL DO FILTRO
-        qtd_exibida = len(ocorrencias_filtradas)
-        titulo_placeholder.header(f"Ocorrências em Aberto ({qtd_exibida})")
-
-        # 6. Exibição dos Cards
-        if not ocorrencias_filtradas:
-            st.info("ℹ️ Nenhuma ocorrência encontrada para este filtro.")
-        else:
-            num_colunas = 4
-            colunas = st.columns(num_colunas)
-
-            for idx, ocorr in enumerate(ocorrencias_filtradas):
-                # Lógica de Cores e Status
-                status = "Data manual ausente"
-                cor = "gray"
-                abertura_manual_formatada = "Não informada"
-                data_abertura_manual = ocorr.get("data_abertura_manual")
-                hora_abertura_manual = ocorr.get("hora_abertura_manual")
-
-                if data_abertura_manual and hora_abertura_manual:
-                    try:
-                        dt_manual = criar_datetime_manual(data_abertura_manual, hora_abertura_manual)
-                        if dt_manual:
-                            abertura_manual_formatada = dt_manual.strftime("%d-%m-%Y %H:%M:%S")
-                            status, cor = classificar_ocorrencia_por_tempo(data_abertura_manual, hora_abertura_manual)
-                        else:
-                            status = "Erro"
-                    except Exception as e:
-                        status = "Erro"
-
-                # Renderiza o Card
-                with colunas[idx % num_colunas]:
-                    safe_idx = f"{idx}_{ocorr.get('nota_fiscal', '')}"
-                    email_enviado_30min = ocorr.get('email_enviado_abertura', False)
-                    email_enviado_90min = ocorr.get('email_enviado_90min', False)
-                    imagem_abertura_url = ocorr.get('imagem_url', '') # Ajustei para 'ocorrencia', não 'ocorr' para manter consistência
-                    
-                    # HTML do Card
-                    st.markdown(
-                        f"""
-                        <div style='background-color:{cor};padding:10px;border-radius:10px;color:white;
-                        box-shadow: 0 4px 10px rgba(0,0,0,0.3);margin-bottom:5px;min-height:250px;font-size:15px;'>
-                        <strong>Ticket #:</strong> {str(ocorr.get('numero_ticket', 'N/A'))[-5:]}<br>
-                        {f'📸 Abertura: <a href="{imagem_abertura_url}" target="_blank" style="text-decoration:underline;color:white;">Baixar</a><br>' if imagem_abertura_url else ''}
-                        <strong>Status:</strong> {status}<br>
-                        {'📧 E-mail 30min enviado<br>' if email_enviado_30min else ''}
-                        {'📧 E-mail 90min enviado<br>' if email_enviado_90min else ''}
-                        <strong>NF:</strong> {ocorr.get('nota_fiscal', '-')}<br>
-                        <strong>Cliente:</strong> {ocorr.get('cliente', '-')}<br>
-                        <strong>Destinatário:</strong> {ocorr.get('destinatario', '-')}<br>
-                        <strong>Focal:</strong> {ocorr.get('focal', '-')}<br>
-                        <strong>Cidade:</strong> {ocorr.get('cidade', '-')}<br>
-                        <strong>Motorista:</strong> {ocorr.get('motorista', '-')}<br>
-                        <strong>Tipo:</strong> {ocorr.get('tipo_de_ocorrencia', '-')}<br>
-                        <strong>Aberto por:</strong> {ocorr.get('responsavel', '-')}<br>
-                        <strong>Data Abertura:</strong> {abertura_manual_formatada.split(" ")[0] if abertura_manual_formatada != "Não informada" else 'Não informada'}<br>
-                        <strong>Hora Abertura:</strong> {hora_abertura_manual or 'Não informada'}<br>
-                        <strong>Observações:</strong> {ocorr.get('observacoes', '')}<br>
-                        </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
-
-                    # Botão/Formulário de Finalizar
-                    if st.session_state.get("ticket_em_finalizacao") == safe_idx:
-                        with st.form(f"form_{safe_idx}"):
-                            chave_data = f"data_final_{safe_idx}"
-                            chave_hora = f"hora_final_{safe_idx}"
-
-                            if chave_data not in st.session_state or not isinstance(st.session_state[chave_data], date):
-                                st.session_state[chave_data] = obter_data_hora_atual_brasil().date()
-                            if chave_hora not in st.session_state or not isinstance(st.session_state[chave_hora], time):
-                                st.session_state[chave_hora] = obter_data_hora_atual_brasil().time()
-
-                            col_data, col_hora = st.columns(2)
-                            with col_data: st.date_input("Data Final", key=chave_data, format="DD/MM/YYYY")
-                            with col_hora: st.time_input("Hora Final", key=chave_hora)
-
-                            complemento = st.text_input("Complementar", key=f"complemento_final_{safe_idx}")
-                            numero_manifesto = st.text_input("N° Manifesto", key=f"numero_manifesto_final_{safe_idx}")
-                            observacao_final = st.text_input("Obs Final", key=f"observacao_final_{safe_idx}")
-                            imagem_finalizacao = st.file_uploader("Anexar img finalização", type=["png", "jpg", "jpeg"], key=f"imagem_finalizacao_{safe_idx}")
-
-                            if st.form_submit_button("Concluir Finalização"):
-                                if not complemento.strip():
-                                    st.warning("Complementar obrigatório.")
-                                else:
-                                    st.toast("Finalizando...")
-                                    imagem_url_finalizacao = ""
-                                    if imagem_finalizacao:
-                                        try:
-                                            nome_arquivo = f"{ocorr['id']}_final_{limpar_nome_arquivo(imagem_finalizacao.name)}"
-                                            supabase.storage.from_("imagens-finalizacao").upload(
-                                                nome_arquivo, imagem_finalizacao.read(), file_options={"content-type": imagem_finalizacao.type}
-                                            )
-                                            imagem_url_finalizacao = supabase.storage.from_("imagens-finalizacao").get_public_url(nome_arquivo)
-                                        except: pass
-
-                                    sucesso, mensagem = finalizar_ocorrencia(
-                                        ocorr, complemento, st.session_state[chave_data], st.session_state[chave_hora],
-                                        imagem_url_finalizacao, observacao_final, numero_manifesto
-                                    )
-
-                                    if sucesso:
-                                        st.success("Finalizado!")
-                                        st.session_state.ticket_em_finalizacao = None
-                                        tm.sleep(1)
-                                        st.rerun()
-                                    else: st.error(mensagem)
-                    else:
-                        if st.button("Finalizar", key=f"btn_finalizar_{safe_idx}"):
-                            st.session_state.ticket_em_finalizacao = safe_idx
-                            st.rerun()
-
-    # =========================
-    #    ABA3 FINALIZADAS 
-    # =========================   
-    if st.session_state.aba_ativa == "aba3":
-        col_titulo, col_botao = st.columns([6, 1])
-        with col_titulo:
-            st.header("Ocorrências Finalizadas")
-        with col_botao:
-            atualizar = st.button("🔄 Atualizar", key="btn_atualizar_finalizadas", use_container_width=True)
-
-        if atualizar:
-            st.cache_data.clear()
-            try:
-                st.session_state.ocorrencias_finalizadas = carregar_ocorrencias_finalizadas()
-            except Exception as e:
-                st.error(f"Erro ao carregar ocorrências finalizadas: {e}")
-                st.stop()
-
-        ocorrencias_finalizadas = st.session_state.get("ocorrencias_finalizadas", [])
-
-        if not ocorrencias_finalizadas:
-            st.info("ℹ️ Nenhuma ocorrência finalizada.")
-        else:
-            col1, col2 = st.columns([1, 2])
-            with col1:
-                filtro_nf = st.text_input("🔎 Pesquisar por NF:", "", max_chars=10)
-            with col2:
-                if st.button("📤 Exportar Excel"):
-                    try:
-                        df = pd.DataFrame(ocorrencias_finalizadas)
-                        output = BytesIO()
-                        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                            df.to_excel(writer, index=False, sheet_name='Finalizadas')
-                        st.download_button(
-                            label="⬇️ Baixar Relatório Excel",
-                            data=output.getvalue(),
-                            file_name="ocorrencias_finalizadas.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        )
-                    except Exception as e:
-                        st.error(f"Erro ao exportar para Excel: {e}")
-
-            if filtro_nf:
-                ocorrencias_filtradas = [
-                    ocorr for ocorr in ocorrencias_finalizadas
-                    if filtro_nf.lower() in str(ocorr.get("nota_fiscal", "")).lower()
-                ]
-            else:
-                ocorrencias_filtradas = ocorrencias_finalizadas
-
-            erros_detectados = []
-            num_colunas = 4
-            for i in range(0, len(ocorrencias_filtradas), num_colunas):
-                linha = ocorrencias_filtradas[i:i+num_colunas]
-                colunas = st.columns(num_colunas)
-
-                for idx, ocorr in enumerate(linha):
-                    ocorr = auto_sanitizar_ocorrencia(ocorr)
-                    
-                    data_abertura_manual = hora_abertura_manual = "-"
-                    try:
-                        if ocorr.get("data_abertura_manual") and ocorr.get("hora_abertura_manual"):
-                            abertura_dt = criar_datetime_manual(
-                                ocorr["data_abertura_manual"], ocorr["hora_abertura_manual"]
-                            )
-                            if abertura_dt:
-                                data_abertura_manual = abertura_dt.strftime("%d-%m-%Y")
-                                hora_abertura_manual = abertura_dt.strftime("%H:%M:%S")
-                    except Exception as e:
-                        st.warning(f"Erro ao converter data/hora de abertura: {e}")
-
-                    data_finalizacao_manual = hora_finalizacao_manual = "-"
-                    try:
-                        # Mudança de 'hora_finalizacao_manual' para 'hora_finalizacao_banco' para refletir a correção na função finalizar_ocorrencia
-                        if ocorr.get("data_finalizacao_manual") and ocorr.get("hora_finalizacao_banco"):
-                            finalizacao_dt = criar_datetime_manual(
-                                ocorr["data_finalizacao_manual"], ocorr["hora_finalizacao_banco"]
-                            )
-                            if finalizacao_dt:
-                                data_finalizacao_manual = finalizacao_dt.strftime("%d-%m-%Y")
-                                hora_finalizacao_manual = finalizacao_dt.strftime("%H:%M:%S")
-                    except Exception as e:
-                        st.warning(f"Erro ao converter data/hora de finalização: {e}")
-
-                    with colunas[idx]:
-                        try:
-                            email_abertura = "📧 E-mail 30min enviado" if ocorr.get('email_enviado_abertura', False) else ""
-                            email_90min = "📧 E-mail 90min enviado" if ocorr.get('email_enviado_90min', False) else ""
-                            email_finalizacao = "📧 E-mail finalização enviado" if ocorr.get('email_finalizacao_enviado', False) else ""
-
-                            imagem_abertura_url = html.escape(str(ocorr.get("imagem_url", "")), quote=True)
-                            imagem_finalizacao_url = html.escape(str(ocorr.get("imagem_finalizacao_url", "")), quote=True)
-
-                            html_card = f"""
-                            <div style='background-color:{seguro(ocorr.get('Cor', 'gray'))};padding:10px;border-radius:10px;color:white;
-                            box-shadow: 0 4px 10px rgba(0,0,0,0.3);margin-bottom:5px;min-height:250px;font-size:15px;'>
-                            <strong>Ticket #:</strong> {seguro(ocorr['numero_ticket'])}<br>
-                            {'📸 Abertura: <a href="' + imagem_abertura_url + '" target="_blank" style="text-decoration:underline;color:white;">Baixar</a><br>' if imagem_abertura_url else ''}
-                            {'📸 Finalização: <a href="' + imagem_finalizacao_url + '" target="_blank" style="text-decoration:underline;color:white;">Baixar</a><br>' if imagem_finalizacao_url else ''}
-                            
-                            {email_abertura}<br>
-                            {email_90min}<br>
-                            {email_finalizacao}<br>
-                            <strong>NF:</strong> {seguro(ocorr['nota_fiscal'])}<br>
-                            <strong>Cliente:</strong> {seguro(ocorr['cliente'])}<br>
-                            <strong>Destinatário:</strong> {seguro(ocorr['destinatario'])}<br>
-                            <strong>Focal:</strong> {seguro(ocorr['focal'])}<br>
-                            <strong>Cidade:</strong> {seguro(ocorr['cidade'])}<br>
-                            <strong>Motorista:</strong> {seguro(ocorr['motorista'])}<br>
-                            <strong>Tipo:</strong> {seguro(ocorr['tipo_de_ocorrencia'])}<br>
-                            <strong>Aberto por:</strong> {seguro(ocorr['responsavel'])}<br>
-                            <strong>Finalizado por:</strong> {seguro(ocorr['finalizado_por'])}<br>
-                            <strong>Data Abertura:</strong> {data_abertura_manual}<br>
-                            <strong>Hora Abertura:</strong> {hora_abertura_manual}<br>
-                            <strong>Data Finalização:</strong> {data_finalizacao_manual}<br>
-                            <strong>Hora Finalização:</strong> {hora_finalizacao_manual}<br>
-                            <strong>Permanência:</strong> {seguro(ocorr['permanencia_manual'])}<br>
-                            <strong>Complementar:</strong> {seguro(ocorr['complementar'], '')}<br>
-                            </div>
-                            """
-                            st.markdown(html_card, unsafe_allow_html=True)
-
-                        except Exception as e:
-                            st.warning(f"⚠️ Erro ao montar card de ocorrência: Ticket {ocorr.get('numero_ticket')} — {e}")
-                            with st.expander(f"🔍 Ver dados da ocorrência com erro (Ticket {ocorr.get('numero_ticket')})"):
-                                st.json(ocorr)
-                            erros_detectados.append({
-                                "ticket": ocorr.get("numero_ticket"),
-                                "nf": ocorr.get("nota_fiscal"),
-                                "erro": str(e),
-                                "dados": ocorr
-                            })
-
-    # =========================
-    #     ABA 4 - CONFIGURAÇÕES
-    # =========================
-    if st.session_state.aba_ativa == "aba4":
-        st.header("Configurações")
-
-        # Seção de troca de senha
-        st.subheader("🔑 Alterar Senha")
-
-        with st.form("form_alterar_senha"):
-            senha_atual = st.text_input("Senha Atual", type="password")
-            nova_senha = st.text_input("Nova Senha", type="password")
-            confirmar_senha = st.text_input("Confirmar Nova Senha", type="password")
-            
-            alterar_senha = st.form_submit_button("Alterar Senha")
-            
-            if alterar_senha:
-                if not senha_atual or not nova_senha or not confirmar_senha:
-                    st.error("❌ Todos os campos são obrigatórios.")
-                elif nova_senha != confirmar_senha:
-                    st.error("❌ As senhas não coincidem.")
-                else:
-                    try:
-                        # Verificar senha atual
-                        usuario = st.session_state.username
-                        response = supabase.table("usuarios").select("*").eq("nome_usuario", usuario).execute()
-                        
-                        if response.data:
-                            usuario_data = response.data[0]
-                            if verificar_senha(senha_atual, usuario_data["senha_hash"]):
-                                # Atualizar senha
-                                nova_senha_hash = hash_senha(nova_senha)
-                                update_response = supabase.table("usuarios").update({
-                                    "senha_hash": nova_senha_hash
-                                }).eq("nome_usuario", usuario).execute()
-                                
-                                if update_response.data:
-                                    st.success("✅ Senha alterada com sucesso!")
-                                else:
-                                    st.error("❌ Erro ao atualizar senha.")
-                            else:
-                                st.error("❌ Senha atual incorreta.")
-                        else:
-                            st.error("❌ Usuário não encontrado.")
-                    except Exception as e:
-                        st.error(f"❌ Erro ao alterar senha: {e}")
-        
-        # Seção de administração de usuários (apenas para admin)
-        if st.session_state.is_admin:
-            st.subheader("Administração de Usuários")
-            
-            # Tabs para diferentes operações
-            admin_tab1, admin_tab2, admin_tab3 = st.tabs(["Listar Usuários", "Adicionar Usuário", "Editar/Excluir Usuário"])
-            
-            with admin_tab1:
-                try:
-                    response = supabase.table("usuarios").select("*").execute()
-                    if response.data:
-                        usuarios = response.data
-                        
-                        # Criar DataFrame para exibição
-                        df_usuarios = pd.DataFrame([
-                            {
-                                "Nome de Usuário": u["nome_usuario"],
-                                "Admin": "Sim" if u.get("is_admin", False) else "Não",
-                                "Unidade": u.get("unidade", "Não definido"),
-                                "Último Login": u.get("ultimo_login", "-")
-                            }
-                            for u in usuarios
-                        ])
-                        
-                        st.dataframe(df_usuarios)
-                    else:
-                        st.info("Nenhum usuário encontrado.")
-                except Exception as e:
-                    st.error(f"Erro ao listar usuários: {e}")
-            
-            with admin_tab2:
-                with st.form("form_adicionar_usuario"):
-                    novo_usuario = st.text_input("Nome de Usuário")
-                    nova_senha_usuario = st.text_input("Senha", type="password")
-                    confirmar_senha_usuario = st.text_input("Confirmar Senha", type="password")
-                    is_admin = st.checkbox("Usuário Administrador")
-
-                    # Determina a unidade a ser atribuída
-                    if st.session_state.is_admin:
-                        unidade_novo_usuario = st.selectbox("Unidade", ["MTZ", "SMR", "PFO"])
-                    else:
-                        # Herdar unidade do usuário logado
-                        dados_usuario = supabase.table("usuarios").select("unidade").eq("nome_usuario", st.session_state.username).execute().data
-                        unidade_novo_usuario = dados_usuario[0]["unidade"] if dados_usuario else "N/A"
-                        st.text_input("Unidade", value=unidade_novo_usuario, disabled=True)
-
-                    adicionar_usuario = st.form_submit_button("Adicionar Usuário")
-
-                    if adicionar_usuario:
-                        if not novo_usuario or not nova_senha_usuario or not confirmar_senha_usuario:
-                            st.error("❌ Todos os campos são obrigatórios.")
-                        elif nova_senha_usuario != confirmar_senha_usuario:
-                            st.error("❌ As senhas não coincidem.")
-                        else:
-                            try:
-                                # Verificar se usuário já existe
-                                check_response = supabase.table("usuarios").select("*").eq("nome_usuario", novo_usuario).execute()
-
-                                if check_response.data:
-                                    st.error("❌ Nome de usuário já existe.")
-                                else:
-                                    # Criar novo usuário
-                                    senha_hash = hash_senha(nova_senha_usuario)
-                                    insert_response = supabase.table("usuarios").insert({
-                                        "nome_usuario": novo_usuario,
-                                        "senha_hash": senha_hash,
-                                        "is_admin": is_admin,
-                                        "unidade": unidade_novo_usuario,
-                                        "criado_em": obter_data_hora_atual_brasil().isoformat()
-                                    }).execute()
-
-                                    if insert_response.data:
-                                        st.success("✅ Usuário adicionado com sucesso!")
-                                        tm.sleep(1.5)
-                                    else:
-                                        st.error("❌ Erro ao adicionar usuário.")
-                            except Exception as e:
-                                st.error(f"❌ Erro ao adicionar usuário: {e}")
-            
-            with admin_tab3:
-                try:
-                    response = supabase.table("usuarios").select("*").execute()
-                    if response.data:
-                        usuarios = response.data
-                        nomes_usuarios = [u["nome_usuario"] for u in usuarios]
-                        
-                        usuario_selecionado = st.selectbox("Selecione um usuário", nomes_usuarios)
-                        
-                        if usuario_selecionado:
-                            usuario_data = next((u for u in usuarios if u["nome_usuario"] == usuario_selecionado), None)
-                            
-                            if usuario_data:
-                                with st.form("form_editar_usuario"):
-                                    nova_senha_admin = st.text_input("Nova Senha (deixe em branco para não alterar)", type="password")
-                                    is_admin_edit = st.checkbox("Usuário Administrador", value=usuario_data.get("is_admin", False))
-                                    
-                                    col1, col2 = st.columns(2)
-                                    with col1:
-                                        editar_usuario = st.form_submit_button("Atualizar Usuário")
-                                    with col2:
-                                        excluir_usuario = st.form_submit_button("Excluir Usuário", type="primary", help="Esta ação não pode ser desfeita")
-                                    
-                                    if editar_usuario:
-                                        try:
-                                            update_data = {"is_admin": is_admin_edit}
-                                            
-                                            if nova_senha_admin:
-                                                update_data["senha_hash"] = hash_senha(nova_senha_admin)
-                                            update_response = supabase.table("usuarios").update(update_data).eq("nome_usuario", usuario_selecionado).execute()
-                                            
-                                            if update_response.data:
-                                                st.success("✅ Usuário atualizado com sucesso!")
-                                            else:
-                                                st.error("❌ Erro ao atualizar usuário.")
-                                        except Exception as e:
-                                            st.error(f"❌ Erro ao atualizar usuário: {e}")
-                                    
-                                    if excluir_usuario:
-                                        if usuario_selecionado == st.session_state.username:
-                                            st.error("❌ Você não pode excluir seu próprio usuário.")
-                                        else:
-                                            try:
-                                                delete_response = supabase.table("usuarios").delete().eq("nome_usuario", usuario_selecionado).execute()
-                                                
-                                                if delete_response.data:
-                                                    st.success("✅ Usuário excluído com sucesso!")
-                                                    tm.sleep(1.5)
-                                                    st.rerun()
-                                                else:
-                                                    st.error("❌ Erro ao excluir usuário.")
-                                            except Exception as e:
-                                                st.error(f"❌ Erro ao excluir usuário: {e}")
-                    else:
-                        st.info("Nenhum usuário encontrado.")
-                except Exception as e:
-                    st.error(f"Erro ao carregar usuários: {e}")
-
-    # =========================
-    #     ABA 6 - NOTIFICAÇÕES POR E-MAIL (APENAS ADMIN)
-    # =========================
-    if st.session_state.aba_ativa == "aba6" and st.session_state.is_admin:
-        st.header("Notificações por E-mail")
-            
-        st.markdown("""
-        ### Sistema de Notificação Automática
-        
-        Este sistema envia e-mails automáticos para clientes que possuem ocorrências abertas há mais de 30 minutos.
-        
-        Os e-mails são enviados utilizando:
-        - **Remetente:** ticket@clicklogtransportes.com.br
-        - **Servidor SMTP:** smtp.gmail.com (ajuste se for Kinghost)
-        
-        Os destinatários são obtidos do cadastro de clientes:
-        - **E-mail principal:** Campo `enviar_para_email`
-        - **E-mails em cópia (CC):** Campo `email_copia`, separados por ponto e vírgula
-        """)
-        
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.subheader("Testar Conexão SMTP")
-            if st.button("Testar Conexão"):
-                with st.spinner("Testando conexão com servidor SMTP..."):
-                    sucesso, mensagem = testar_conexao_smtp()
-                    if sucesso:
-                        st.success(mensagem)
-                    else:
-                        st.error(mensagem)
-
-        with col2:
-            st.subheader("Enviar Notificações Manualmente")
-            if st.button("Enviar Notificações Agora"):
-                with st.spinner("Verificando ocorrências e enviando e-mails... isso pode levar um tempo..."):
-                    resultados = notificar_ocorrencias_abertas()
-
-                    # Exibir resultados
-                    for resultado in resultados:
-                        if resultado.get("status") == "sucesso":
-                            st.success(f"✅ {resultado.get('mensagem')} para {resultado.get('cliente')} - Ticket {resultado.get('ticket')} - NF {resultado.get('nota_fiscal')}")
-                        else:
-                            st.error(f"❌ {resultado.get('mensagem')} para {resultado.get('cliente')} - Ticket {resultado.get('ticket')} - NF {resultado.get('nota_fiscal')}")
-            
-            # Exibir histórico de e-mails enviados
-            st.subheader("Histórico de E-mails Enviados")
-
-            # Buscar dados da tabela
-            resposta = supabase.table("emails_enviados").select("*").order("data_hora", desc=True).execute()
-            dados = resposta.data
-
-            if dados:
-                df_historico = pd.DataFrame(dados)
-                
-                # Formatar coluna de data/hora se necessário
-                if "data_hora" in df_historico.columns:
-                    # Adicione format='mixed' para o Pandas aceitar datas com e sem milissegundos na mesma coluna
-                    df_historico["data_hora"] = pd.to_datetime(df_historico["data_hora"], format='mixed').dt.strftime("%d/%m/%Y %H:%M:%S")
-                
-                st.dataframe(df_historico)
-            else:
-                st.info("Nenhum e-mail enviado ainda.")
-
-    # =========================
-    #     ABA 8 - ESTATÍSTICAS
-    # =========================
-    if st.session_state.aba_ativa == "aba8":
-        st.header("📊 Estatísticas de Ocorrências Finalizadas")
-
-        ocorrencias_finalizadas = carregar_ocorrencias_finalizadas()
-
-        if not ocorrencias_finalizadas:
-            st.info("ℹ️ Nenhuma ocorrência finalizada para gerar estatísticas.")
+    
+# =============================== 
+#    ABA3 FINALIZADAS 
+# ===============================   
+def seguro(valor, padrao="-"):
+    return html.escape(str(valor if valor is not None else padrao))
+
+def auto_sanitizar_ocorrencia(ocorr):
+    campos_texto = [
+        'numero_ticket', 'nota_fiscal', 'cliente', 'destinatario', 'focal', 'cidade',
+        'motorista', 'tipo_de_ocorrencia', 'responsavel', 'finalizado_por',
+        'permanencia_manual', 'complementar', 'Status', 'Cor'
+    ]
+    for campo in campos_texto:
+        if campo not in ocorr or ocorr[campo] is None:
+            ocorr[campo] = "-"
+    return ocorr
+
+if st.session_state.aba_ativa == "aba3":
+    col_titulo, col_botao = st.columns([6, 1])
+    with col_titulo:
+        st.header("Ocorrências Finalizadas")
+    with col_botao:
+        atualizar = st.button("🔄 Atualizar", key="btn_atualizar_finalizadas", use_container_width=True)
+
+    if atualizar:
+        st.cache_data.clear()
+        try:
+            st.session_state.ocorrencias_finalizadas = carregar_ocorrencias_finalizadas()
+        except Exception as e:
+            st.error(f"Erro ao carregar ocorrências finalizadas: {e}")
             st.stop()
 
-        df_finalizadas = pd.DataFrame(ocorrencias_finalizadas)
 
-        # --- Limpeza e conversões ---
-        # Garantindo que 'abertura_timestamp' seja usado se 'data_hora_abertura' for inválido
-        df_finalizadas["data_hora_abertura"] = pd.to_datetime(
-            df_finalizadas["data_hora_abertura"], errors="coerce"
-        ).fillna(pd.to_datetime(df_finalizadas["abertura_timestamp"], errors="coerce")) # Fallback
+    ocorrencias_finalizadas = st.session_state.get("ocorrencias_finalizadas", [])
+
+    if not ocorrencias_finalizadas:
+        st.info("ℹ️ Nenhuma ocorrência finalizada.")
+    else:
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            filtro_nf = st.text_input("🔎 Pesquisar por NF:", "", max_chars=10)
+        with col2:
+            if st.button("📤 Exportar Excel"):
+                try:
+                    df = pd.DataFrame(ocorrencias_finalizadas)
+                    output = BytesIO()
+                    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                        df.to_excel(writer, index=False, sheet_name='Finalizadas')
+                    st.download_button(
+                        label="⬇️ Baixar Relatório Excel",
+                        data=output.getvalue(),
+                        file_name="ocorrencias_finalizadas.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+                except Exception as e:
+                    st.error(f"Erro ao exportar para Excel: {e}")
+
+        if filtro_nf:
+            ocorrencias_filtradas = [
+                ocorr for ocorr in ocorrencias_finalizadas
+                if filtro_nf.lower() in str(ocorr.get("nota_fiscal", "")).lower()
+            ]
+        else:
+            ocorrencias_filtradas = ocorrencias_finalizadas
+
+        erros_detectados = []
+        num_colunas = 4
+        for i in range(0, len(ocorrencias_filtradas), num_colunas):
+            linha = ocorrencias_filtradas[i:i+num_colunas]
+            colunas = st.columns(num_colunas)
+
+            for idx, ocorr in enumerate(linha):
+                ocorr = auto_sanitizar_ocorrencia(ocorr)
+                
+                data_abertura_manual = hora_abertura_manual = "-"
+                try:
+                    if ocorr.get("data_abertura_manual") and ocorr.get("hora_abertura_manual"):
+                        abertura_dt = criar_datetime_manual(
+                            ocorr["data_abertura_manual"], ocorr["hora_abertura_manual"]
+                        )
+                        if abertura_dt:
+                            data_abertura_manual = abertura_dt.strftime("%d-%m-%Y")
+                            hora_abertura_manual = abertura_dt.strftime("%H:%M:%S")
+                except Exception as e:
+                    st.warning(f"Erro ao converter data/hora de abertura: {e}")
+
+                data_finalizacao_manual = hora_finalizacao_manual = "-"
+                try:
+                    if ocorr.get("data_finalizacao_manual") and ocorr.get("hora_finalizacao_manual"):
+                        finalizacao_dt = criar_datetime_manual(
+                            ocorr["data_finalizacao_manual"], ocorr["hora_finalizacao_manual"]
+                        )
+                        if finalizacao_dt:
+                            data_finalizacao_manual = finalizacao_dt.strftime("%d-%m-%Y")
+                            hora_finalizacao_manual = finalizacao_dt.strftime("%H:%M:%S")
+                except Exception as e:
+                    st.warning(f"Erro ao converter data/hora de finalização: {e}")
+
+                with colunas[idx]:
+                    try:
+                        email_abertura = "📧 E-mail abertura enviado" if ocorr.get('email_enviado_abertura', False) else ""
+                        email_finalizacao = "📧 E-mail finalização enviado" if ocorr.get('email_finalizacao_enviado', False) else ""
+
+                        imagem_abertura_url = html.escape(str(ocorr.get("imagem_url", "")), quote=True)
+                        imagem_finalizacao_url = html.escape(str(ocorr.get("imagem_finalizacao_url", "")), quote=True)
+
+                        html_card = f"""
+                        <div style='background-color:{seguro(ocorr['Cor'])};padding:10px;border-radius:10px;color:white;
+                        box-shadow: 0 4px 10px rgba(0,0,0,0.3);margin-bottom:5px;min-height:250px;font-size:15px;'>
+                        <strong>Ticket #:</strong> {seguro(ocorr['numero_ticket'])}<br>
+                        {'📸 Abertura: <a href="' + imagem_abertura_url + '" target="_blank" style="text-decoration:underline;color:white;">Baixar</a><br>' if imagem_abertura_url else ''}
+                        {'📸 Finalização: <a href="' + imagem_finalizacao_url + '" target="_blank" style="text-decoration:underline;color:white;">Baixar</a><br>' if imagem_finalizacao_url else ''}
+                        
+                        {email_abertura}<br>
+                        {email_finalizacao}<br>
+                        <strong>NF:</strong> {seguro(ocorr['nota_fiscal'])}<br>
+                        <strong>Cliente:</strong> {seguro(ocorr['cliente'])}<br>
+                        <strong>Destinatário:</strong> {seguro(ocorr['destinatario'])}<br>
+                        <strong>Focal:</strong> {seguro(ocorr['focal'])}<br>
+                        <strong>Cidade:</strong> {seguro(ocorr['cidade'])}<br>
+                        <strong>Motorista:</strong> {seguro(ocorr['motorista'])}<br>
+                        <strong>Tipo:</strong> {seguro(ocorr['tipo_de_ocorrencia'])}<br>
+                        <strong>Aberto por:</strong> {seguro(ocorr['responsavel'])}<br>
+                        <strong>Finalizado por:</strong> {seguro(ocorr['finalizado_por'])}<br>
+                        <strong>Data Abertura:</strong> {data_abertura_manual}<br>
+                        <strong>Hora Abertura:</strong> {hora_abertura_manual}<br>
+                        <strong>Data Finalização:</strong> {data_finalizacao_manual}<br>
+                        <strong>Hora Finalização:</strong> {hora_finalizacao_manual}<br>
+                        <strong>Permanência:</strong> {seguro(ocorr['permanencia_manual'])}<br>
+                        <strong>Complementar:</strong> {seguro(ocorr['complementar'], '')}<br>
+                        </div>
+                        """
+                        st.markdown(html_card, unsafe_allow_html=True)
+
+                    except Exception as e:
+                        st.warning(f"⚠️ Erro ao montar card de ocorrência: Ticket {ocorr.get('numero_ticket')} — {e}")
+                        with st.expander(f"🔍 Ver dados da ocorrência com erro (Ticket {ocorr.get('numero_ticket')})"):
+                            st.json(ocorr)
+                        erros_detectados.append({
+                            "ticket": ocorr.get("numero_ticket"),
+                            "nf": ocorr.get("nota_fiscal"),
+                            "erro": str(e),
+                            "dados": ocorr
+                        })
+
+
+
+
+# =========================
+#     ABA 4 - CONFIGURAÇÕES
+# =========================
+if st.session_state.aba_ativa == "aba4":
+    st.header("Configurações")
+
+    # Seção de troca de senha
+    st.subheader("🔑 Alterar Senha")
+
+    
+    with st.form("form_alterar_senha"):
+        senha_atual = st.text_input("Senha Atual", type="password")
+        nova_senha = st.text_input("Nova Senha", type="password")
+        confirmar_senha = st.text_input("Confirmar Nova Senha", type="password")
         
-        df_finalizadas["data_hora_finalizacao"] = pd.to_datetime(df_finalizadas["data_hora_finalizacao"], errors="coerce")
-        df_finalizadas = df_finalizadas.dropna(subset=["data_hora_abertura", "data_hora_finalizacao"])
-
-        # Calcula tempo de permanência
-        # Remove timezone (caso exista)
-        df_finalizadas["data_hora_abertura"] = df_finalizadas["data_hora_abertura"].dt.tz_localize(None)
-        df_finalizadas["data_hora_finalizacao"] = df_finalizadas["data_hora_finalizacao"].dt.tz_localize(None)
-
-        # Calcula permanência
-        df_finalizadas["permanencia_horas"] = (
-            df_finalizadas["data_hora_finalizacao"] - df_finalizadas["data_hora_abertura"]
-        ).dt.total_seconds() / 3600
-
-        # --- Estatísticas Gerais ---
-        st.subheader("⏱️ Tempo Médio de Permanência")
-        tempo_medio = df_finalizadas["permanencia_horas"].mean()
-        st.metric("Tempo Médio de Permanência (h)", f"{tempo_medio:.2f} h")
-
-        # --- Gráfico por Tipo de Ocorrência ---
-        st.subheader("📌 Ocorrências por Tipo")
-        tipo_counts = df_finalizadas["tipo_de_ocorrencia"].value_counts()
-        st.bar_chart(tipo_counts)
-
-        # --- Gráfico por Cliente ---
-        st.subheader("🏢 Ocorrências por Cliente")
-        cliente_counts = df_finalizadas["cliente"].value_counts()
-        st.bar_chart(cliente_counts)
-
-        # --- Gráfico de Tempo Médio por Focal ---
-        st.subheader("👤 Tempo Médio por Focal")
-        tempo_por_focal = df_finalizadas.groupby("focal")["permanencia_horas"].mean().sort_values(ascending=False)
-        st.bar_chart(tempo_por_focal)
-
-    # =========================
-    #     ABA 7 - CADASTROS
-    # =========================
-    if st.session_state.aba_ativa == "aba7":
-        st.header("Cadastros Gerais")
+        alterar_senha = st.form_submit_button("Alterar Senha")
         
-        # Menu de Navegação Persistente
-        menu_cadastro = st.radio(
-            "Selecione o cadastro:",
-            ["Motoristas", "Cidades", "Clientes", "Configurações"],
-            horizontal=True,
-            key="menu_nav_cadastros"
-        )
+        if alterar_senha:
+            if not senha_atual or not nova_senha or not confirmar_senha:
+                st.error("❌ Todos os campos são obrigatórios.")
+            elif nova_senha != confirmar_senha:
+                st.error("❌ As senhas não coincidem.")
+            else:
+                try:
+                    # Verificar senha atual
+                    usuario = st.session_state.username
+                    response = supabase.table("usuarios").select("*").eq("nome_usuario", usuario).execute()
+                    
+                    if response.data:
+                        usuario_data = response.data[0]
+                        if verificar_senha(senha_atual, usuario_data["senha_hash"]):
+                            # Atualizar senha
+                            nova_senha_hash = hash_senha(nova_senha)
+                            update_response = supabase.table("usuarios").update({
+                                "senha_hash": nova_senha_hash
+                            }).eq("nome_usuario", usuario).execute()
+                            
+                            if update_response.data:
+                                st.success("✅ Senha alterada com sucesso!")
+                            else:
+                                st.error("❌ Erro ao atualizar senha.")
+                        else:
+                            st.error("❌ Senha atual incorreta.")
+                    else:
+                        st.error("❌ Usuário não encontrado.")
+                except Exception as e:
+                    st.error(f"❌ Erro ao alterar senha: {e}")
+    
+    # Seção de administração de usuários (apenas para admin)
+    if st.session_state.is_admin:
+        st.subheader("Administração de Usuários")
+        
+        # Tabs para diferentes operações
+        admin_tab1, admin_tab2, admin_tab3 = st.tabs(["Listar Usuários", "Adicionar Usuário", "Editar/Excluir Usuário"])
+        
+        with admin_tab1:
+            try:
+                response = supabase.table("usuarios").select("*").execute()
+                if response.data:
+                    usuarios = response.data
+                    
+                    # Criar DataFrame para exibição
+                    df_usuarios = pd.DataFrame([
+                        {
+                            "Nome de Usuário": u["nome_usuario"],
+                            "Admin": "Sim" if u.get("is_admin", False) else "Não",
+                            "Unidade": u.get("unidade", "Não definido"),
+                            "Último Login": u.get("ultimo_login", "-")
+                        }
+                        for u in usuarios
+                    ])
+                    
+                    st.dataframe(df_usuarios)
+                else:
+                    st.info("Nenhum usuário encontrado.")
+            except Exception as e:
+                st.error(f"Erro ao listar usuários: {e}")
+        
+        with admin_tab2:
+            with st.form("form_adicionar_usuario"):
+                novo_usuario = st.text_input("Nome de Usuário")
+                nova_senha_usuario = st.text_input("Senha", type="password")
+                confirmar_senha_usuario = st.text_input("Confirmar Senha", type="password")
+                is_admin = st.checkbox("Usuário Administrador")
+
+                # Determina a unidade a ser atribuída
+                if st.session_state.is_admin:
+                    unidade_novo_usuario = st.selectbox("Unidade", ["MTZ", "SMR", "PFO"])
+                else:
+                    # Herdar unidade do usuário logado
+                    dados_usuario = supabase.table("usuarios").select("unidade").eq("nome_usuario", st.session_state.username).execute().data
+                    unidade_novo_usuario = dados_usuario[0]["unidade"] if dados_usuario else "N/A"
+                    st.text_input("Unidade", value=unidade_novo_usuario, disabled=True)
+
+                adicionar_usuario = st.form_submit_button("Adicionar Usuário")
+
+                if adicionar_usuario:
+                    if not novo_usuario or not nova_senha_usuario or not confirmar_senha_usuario:
+                        st.error("❌ Todos os campos são obrigatórios.")
+                    elif nova_senha_usuario != confirmar_senha_usuario:
+                        st.error("❌ As senhas não coincidem.")
+                    else:
+                        try:
+                            # Verificar se usuário já existe
+                            check_response = supabase.table("usuarios").select("*").eq("nome_usuario", novo_usuario).execute()
+
+                            if check_response.data:
+                                st.error("❌ Nome de usuário já existe.")
+                            else:
+                                # Criar novo usuário
+                                senha_hash = hash_senha(nova_senha_usuario)
+                                insert_response = supabase.table("usuarios").insert({
+                                    "nome_usuario": novo_usuario,
+                                    "senha_hash": senha_hash,
+                                    "is_admin": is_admin,
+                                    "unidade": unidade_novo_usuario,
+                                    "criado_em": obter_data_hora_atual_brasil().isoformat()
+                                }).execute()
+
+                                if insert_response.data:
+                                    st.success("✅ Usuário adicionado com sucesso!")
+                                    tm.sleep(1.5)
+                                else:
+                                    st.error("❌ Erro ao adicionar usuário.")
+                        except Exception as e:
+                            st.error(f"❌ Erro ao adicionar usuário: {e}")
+
+        
+        with admin_tab3:
+            try:
+                response = supabase.table("usuarios").select("*").execute()
+                if response.data:
+                    usuarios = response.data
+                    nomes_usuarios = [u["nome_usuario"] for u in usuarios]
+                    
+                    usuario_selecionado = st.selectbox("Selecione um usuário", nomes_usuarios)
+                    
+                    if usuario_selecionado:
+                        usuario_data = next((u for u in usuarios if u["nome_usuario"] == usuario_selecionado), None)
+                        
+                        if usuario_data:
+                            with st.form("form_editar_usuario"):
+                                nova_senha_admin = st.text_input("Nova Senha (deixe em branco para não alterar)", type="password")
+                                is_admin_edit = st.checkbox("Usuário Administrador", value=usuario_data.get("is_admin", False))
+                                
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    editar_usuario = st.form_submit_button("Atualizar Usuário")
+                                with col2:
+                                    excluir_usuario = st.form_submit_button("Excluir Usuário", type="primary", help="Esta ação não pode ser desfeita")
+                                
+                                if editar_usuario:
+                                    try:
+                                        update_data = {"is_admin": is_admin_edit}
+                                        
+                                        if nova_senha_admin:
+                                            update_data["senha_hash"] = hash_senha(nova_senha_admin)
+                                        
+                                        update_response = supabase.table("usuarios").update(update_data).eq("nome_usuario", usuario_selecionado).execute()
+                                        
+                                        if update_response.data:
+                                            st.success("✅ Usuário atualizado com sucesso!")
+                                        else:
+                                            st.error("❌ Erro ao atualizar usuário.")
+                                    except Exception as e:
+                                        st.error(f"❌ Erro ao atualizar usuário: {e}")
+                                
+                                if excluir_usuario:
+                                    if usuario_selecionado == st.session_state.username:
+                                        st.error("❌ Você não pode excluir seu próprio usuário.")
+                                    else:
+                                        try:
+                                            delete_response = supabase.table("usuarios").delete().eq("nome_usuario", usuario_selecionado).execute()
+                                            
+                                            if delete_response.data:
+                                                st.success("✅ Usuário excluído com sucesso!")
+                                                tm.sleep(1.5)
+                                                st.rerun()
+                                            else:
+                                                st.error("❌ Erro ao excluir usuário.")
+                                        except Exception as e:
+                                            st.error(f"❌ Erro ao excluir usuário: {e}")
+                else:
+                    st.info("Nenhum usuário encontrado.")
+            except Exception as e:
+                st.error(f"Erro ao carregar usuários: {e}")
+
+# =========================
+#     ABA 6 - NOTIFICAÇÕES POR E-MAIL (APENAS ADMIN)
+# =========================
+if st.session_state.aba_ativa == "aba6" and st.session_state.is_admin:
+    st.header("Notificações por E-mail")
+        
+    st.markdown("""
+    ### Sistema de Notificação Automática
+    
+    Este sistema envia e-mails automáticos para clientes que possuem ocorrências abertas há mais de 30 minutos.
+    
+    Os e-mails são enviados utilizando:
+    - **Remetente:** ticket@clicklogtransportes.com.br
+    - **Servidor SMTP:** smtp.kinghost.net
+    
+    Os destinatários são obtidos da planilha de clientes:
+    - **E-mail principal:** Coluna C (enviar_para_email)
+    - **E-mails em cópia (CC):** Coluna D (email_copia), separados por ponto e vírgula
+    """)
+    
+    
+    
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("Testar Conexão SMTP")
+        if st.button("Testar Conexão"):
+            with st.spinner("Testando conexão com servidor SMTP..."):
+                sucesso, mensagem = testar_conexao_smtp()
+                if sucesso:
+                    st.success(mensagem)
+                else:
+                    st.error(mensagem)
+
+    with col2:
+        st.subheader("Enviar Notificações Manualmente")
+        if st.button("Enviar Notificações Agora"):
+            with st.spinner("Verificando ocorrências e enviando e-mails... isso pode levar um tempo..."):
+                # AGORA ESSA FUNÇÃO SÓ É CHAMADA AO CLICAR NO BOTÃO
+                resultados = notificar_ocorrencias_abertas()
+
+                # Exibir resultados
+                for resultado in resultados:
+                    if resultado.get("status") == "info":
+                        st.info(resultado.get("mensagem"))
+                    elif resultado.get("status") == "sucesso":
+                        st.success(f"✅ E-mail enviado para {resultado.get('cliente')} - Ticket {resultado.get('ticket')} - NF {resultado.get('nota_fiscal')}")
+                    else:
+                        st.error(f"❌ Erro ao enviar para {resultado.get('cliente')}: {resultado.get('mensagem')}")
+        # Exibir histórico de e-mails enviados
+        st.subheader("Histórico de E-mails Enviados")
+
+        # Buscar dados da tabela
+        resposta = supabase.table("emails_enviados").select("*").order("data_hora", desc=True).execute()
+        dados = resposta.data
+
+        if dados:
+            df_historico = pd.DataFrame(dados)
+            
+            # Formatar coluna de data/hora se necessário
+            if "data_hora" in df_historico.columns:
+                # Adicione format='mixed' para o Pandas aceitar datas com e sem milissegundos na mesma coluna
+                df_historico["data_hora"] = pd.to_datetime(df_historico["data_hora"], format='mixed').dt.strftime("%d/%m/%Y %H:%M:%S")
+            
+            st.dataframe(df_historico)
+        else:
+            st.info("Nenhum e-mail enviado ainda.")
+
+
+# =========================
+#     ABA 8 - ESTATÍSTICAS
+# =========================
+if st.session_state.aba_ativa == "aba8":
+    st.header("📊 Estatísticas de Ocorrências Finalizadas")
+
+    ocorrencias_finalizadas = carregar_ocorrencias_finalizadas()
+
+    if not ocorrencias_finalizadas:
+        st.info("ℹ️ Nenhuma ocorrência finalizada para gerar estatísticas.")
+        st.stop()
+
+    df_finalizadas = pd.DataFrame(ocorrencias_finalizadas)
+
+    # --- Limpeza e conversões ---
+    df_finalizadas["data_hora_abertura"] = pd.to_datetime(
+        df_finalizadas.get("abertura_ticket") or df_finalizadas.get("abertura_timestamp"), errors="coerce"
+    )
+    df_finalizadas["data_hora_finalizacao"] = pd.to_datetime(df_finalizadas["data_hora_finalizacao"], errors="coerce")
+    df_finalizadas = df_finalizadas.dropna(subset=["data_hora_abertura", "data_hora_finalizacao"])
+
+    # Calcula tempo de permanência
+   # Remove timezone (caso exista)
+    df_finalizadas["data_hora_abertura"] = df_finalizadas["data_hora_abertura"].dt.tz_localize(None)
+    df_finalizadas["data_hora_finalizacao"] = df_finalizadas["data_hora_finalizacao"].dt.tz_localize(None)
+
+    # Calcula permanência
+    df_finalizadas["permanencia_horas"] = (
+        df_finalizadas["data_hora_finalizacao"] - df_finalizadas["data_hora_abertura"]
+    ).dt.total_seconds() / 3600
+
+    # --- Estatísticas Gerais ---
+    st.subheader("⏱️ Tempo Médio de Permanência")
+    tempo_medio = df_finalizadas["permanencia_horas"].mean()
+    st.metric("Tempo Médio de Permanência (h)", f"{tempo_medio:.2f} h")
+
+    # --- Gráfico por Tipo de Ocorrência ---
+    st.subheader("📌 Ocorrências por Tipo")
+    tipo_counts = df_finalizadas["tipo_de_ocorrencia"].value_counts()
+    st.bar_chart(tipo_counts)
+
+    # --- Gráfico por Cliente ---
+    st.subheader("🏢 Ocorrências por Cliente")
+    cliente_counts = df_finalizadas["cliente"].value_counts()
+    st.bar_chart(cliente_counts)
+
+    # --- Gráfico de Tempo Médio por Focal ---
+    st.subheader("👤 Tempo Médio por Focal")
+    tempo_por_focal = df_finalizadas.groupby("focal")["permanencia_horas"].mean().sort_values(ascending=False)
+    st.bar_chart(tempo_por_focal)
+
+
+# =========================
+#     ABA 7 - CADASTROS
+# =========================
+if st.session_state.aba_ativa == "aba7":
+    st.header("Cadastros Gerais")
+    
+    # Menu de Navegação Persistente
+    menu_cadastro = st.radio(
+        "Selecione o cadastro:",
+        ["Motoristas", "Cidades", "Clientes", "Configurações"],
+        horizontal=True,
+        key="menu_nav_cadastros"
+    )
+    st.markdown("---")
+
+    # =========================================================
+    # 1. GERENCIAR MOTORISTAS
+    # =========================================================
+    if menu_cadastro == "Motoristas":
+        st.subheader("Gerenciar Motoristas")
+        modo_mot = st.radio("Ação:", ["Cadastrar Novo", "Editar Existente"], horizontal=True, key="radio_mot")
+        
+        # --- NOVO MOTORISTA ---
+        if modo_mot == "Cadastrar Novo":
+            with st.form("form_mot_novo", clear_on_submit=True):
+                nm = st.text_input("Nome do Motorista")
+                if st.form_submit_button("Salvar Novo Motorista"):
+                    if nm:
+                        try:
+                            supabase.table("motoristas").insert({"motorista": nm}).execute()
+                            st.success(f"Motorista '{nm}' cadastrado!")
+                            carregar_motoristas_supabase.clear()
+                        except Exception as e:
+                            st.error(f"Erro ao cadastrar: {e}")
+                    else: st.warning("Digite o nome.")
+        
+        # --- EDITAR MOTORISTA ---
+        else:
+            try:
+                res = supabase.table("motoristas").select("*").range(0, 5000).execute()
+                lista_mot = res.data if res.data else []
+            except Exception as e:
+                st.error(f"Erro de conexão: {e}")
+                lista_mot = []
+            
+            lista_mot = [m for m in lista_mot if m.get('motorista')]
+            
+            if not lista_mot:
+                st.info("Nenhum motorista encontrado.")
+            else:
+                lista_mot = sorted(lista_mot, key=lambda x: x['motorista'])
+                dict_mot = {m['motorista']: m['id'] for m in lista_mot}
+                
+                st.caption(f"Total: {len(lista_mot)} motoristas")
+                
+                # AJUSTE AQUI: index=None faz começar vazio
+                nome_sel = st.selectbox(
+                    "Selecione o Motorista:", 
+                    options=list(dict_mot.keys()), 
+                    index=None, 
+                    placeholder="Selecione...",
+                    key="sel_mot_edit"
+                )
+                
+                # Só mostra o formulário SE tiver selecionado alguém
+                if nome_sel:
+                    with st.form("form_mot_edit"):
+                        novo_nome_mot = st.text_input("Editar Nome:", value=nome_sel)
+                        
+                        if st.form_submit_button("Salvar Alterações"):
+                            id_alvo = dict_mot[nome_sel]
+                            try:
+                                supabase.table("motoristas").update({"motorista": novo_nome_mot}).eq("id", id_alvo).execute()
+                                st.success("Motorista atualizado!")
+                                carregar_motoristas_supabase.clear()
+                                tm.sleep(1)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao atualizar: {e}")
+
+    # =========================================================
+    # 2. GERENCIAR CIDADES
+    # =========================================================
+    elif menu_cadastro == "Cidades":
+        st.subheader("Gerenciar Cidades")
+        modo_cid = st.radio("Ação:", ["Cadastrar Nova", "Editar Existente"], horizontal=True, key="radio_cid")
+
+        if modo_cid == "Cadastrar Nova":
+            with st.form("form_cid_novo", clear_on_submit=True):
+                nc = st.text_input("Nome da Cidade")
+                if st.form_submit_button("Salvar Nova Cidade"):
+                    if nc:
+                        suc, msg = inserir_cidade(nc)
+                        if suc: 
+                            st.success(msg)
+                            carregar_cidades_supabase.clear()
+                        else: st.error(msg)
+                    else: st.warning("Digite a cidade.")
+        else:
+            try:
+                res = supabase.table("cidades").select("*").execute()
+                lista_cid = sorted(res.data, key=lambda x: x.get('cidade', '')) if res.data else []
+            except: lista_cid = []
+
+            if not lista_cid:
+                st.info("Nenhuma cidade cadastrada.")
+            else:
+                dict_cid = {c['cidade']: c['id'] for c in lista_cid if c.get('cidade')}
+                
+                # AJUSTE AQUI: index=None
+                cid_sel = st.selectbox(
+                    "Selecione a Cidade:", 
+                    options=list(dict_cid.keys()), 
+                    index=None,
+                    placeholder="Selecione...",
+                    key="sel_cid_edit"
+                )
+                
+                if cid_sel:
+                    with st.form("form_cid_edit"):
+                        nova_nome_cid = st.text_input("Editar Nome:", value=cid_sel)
+                        if st.form_submit_button("Salvar Alterações"):
+                            id_alvo = dict_cid[cid_sel]
+                            suc, msg = atualizar_cidade(id_alvo, nova_nome_cid)
+                            if suc:
+                                st.success(msg)
+                                tm.sleep(1)
+                                st.rerun()
+                            else: st.error(msg)
+
+    # =========================================================
+    # 3. GERENCIAR CLIENTES
+    # =========================================================
+    elif menu_cadastro == "Clientes":
+        st.subheader("Gerenciar Clientes")
+        
+        lista_focais_disp = carregar_focal_supabase()
+        opcao_gerencia = st.radio("Ação:", ["➕ Cadastrar Novo", "✏️ Editar Existente"], horizontal=True, key="radio_cli")
         st.markdown("---")
 
-        # =========================================================
-        # 1. GERENCIAR MOTORISTAS
-        # =========================================================
-        if menu_cadastro == "Motoristas":
-            st.subheader("Gerenciar Motoristas")
-            modo_mot = st.radio("Ação:", ["Cadastrar Novo", "Editar Existente"], horizontal=True, key="radio_mot")
-            
-            # --- NOVO MOTORISTA ---
-            if modo_mot == "Cadastrar Novo":
-                with st.form("form_mot_novo", clear_on_submit=True):
-                    nm = st.text_input("Nome do Motorista")
-                    if st.form_submit_button("Salvar Novo Motorista"):
-                        if nm:
-                            try:
-                                supabase.table("motoristas").insert({"motorista": nm}).execute()
-                                st.success(f"Motorista '{nm}' cadastrado!")
-                                carregar_motoristas_supabase.clear() # Limpa cache para recarregar
-                            except Exception as e:
-                                st.error(f"Erro ao cadastrar: {e}")
-                        else: st.warning("Digite o nome.")
-            
-            # --- EDITAR MOTORISTA ---
+        # --- CADASTRAR NOVO ---
+        if opcao_gerencia == "➕ Cadastrar Novo":
+            with st.form("form_novo_cli", clear_on_submit=True):
+                st.markdown("##### Novo Cliente")
+                
+                col_n1, col_n2 = st.columns(2)
+                
+                # COLUNA 1
+                with col_n1:
+                    nome = st.text_input("Nome (MAIÚSCULO)")
+                    cnpj_novo = st.text_input("CNPJ")
+                    focal = st.selectbox("Focal", options=lista_focais_disp)
+                    rec_email = st.checkbox("Cliente irá Receber E-mail de Notificação?", value=False)
+
+                # COLUNA 2
+                with col_n2:
+                    email_p = st.text_input("E-mail Principal")
+                    email_c = st.text_input("Emails em Cópia (;)")
+                
+                st.markdown("---")
+                if st.form_submit_button("Salvar Novo Cliente"):
+                    erros = []
+                    if not nome: erros.append("Nome obrigatório.")
+                    elif not validar_texto_maiusculo(nome): erros.append("Nome deve ser MAIÚSCULO.")
+                    if not focal: erros.append("Selecione um focal.")
+                    
+                    if erros:
+                        for e in erros: st.error(e)
+                    else:
+                        suc, msg = inserir_cliente(nome, focal, rec_email, email_p, email_c, cnpj_novo)
+                        if suc:
+                            st.success(msg)
+                            carregar_clientes_supabase.clear()
+                            tm.sleep(1)
+                            st.rerun()
+                        else: st.error(msg)
+
+        # --- EDITAR EXISTENTE ---
+        elif opcao_gerencia == "✏️ Editar Existente":
+            try:
+                res = supabase.table("clientes").select("*").range(0, 3000).order("cliente").execute()
+                df_edit = pd.DataFrame(res.data) if res.data else pd.DataFrame()
+            except Exception as e:
+                st.error(f"Erro: {e}")
+                df_edit = pd.DataFrame()
+
+            if df_edit.empty:
+                st.warning("Sem clientes.")
             else:
-                try:
-                    res = supabase.table("motoristas").select("motorista, id").range(0, 5000).execute()
-                    lista_mot = res.data if res.data else []
-                except Exception as e:
-                    st.error(f"Erro de conexão: {e}")
-                    lista_mot = []
+                nomes = df_edit["cliente"].tolist()
                 
-                lista_mot = [m for m in lista_mot if m.get('motorista')]
+                # AJUSTE AQUI: index=None para começar vazio
+                escolha = st.selectbox(
+                    "Selecione o Cliente para editar:", 
+                    options=nomes, 
+                    index=None, 
+                    placeholder="Selecionar..."
+                )
                 
-                if not lista_mot:
-                    st.info("Nenhum motorista encontrado.")
-                else:
-                    lista_mot = sorted(lista_mot, key=lambda x: x['motorista'])
-                    dict_mot = {m['motorista']: m['id'] for m in lista_mot}
+                # O formulário só aparece se 'escolha' não for vazio
+                if escolha:
+                    # Pega dados
+                    dados = df_edit[df_edit["cliente"] == escolha].iloc[0]
                     
-                    st.caption(f"Total: {len(lista_mot)} motoristas")
-                    
-                    nome_sel = st.selectbox(
-                        "Selecione o Motorista:", 
-                        options=list(dict_mot.keys()), 
-                        index=None, 
-                        placeholder="Selecione...",
-                        key="sel_mot_edit"
-                    )
-                    
-                    # Só mostra o formulário SE tiver selecionado alguém
-                    if nome_sel:
-                        with st.form("form_mot_edit"):
-                            novo_nome_mot = st.text_input("Editar Nome:", value=nome_sel)
+                    with st.form("form_edit_cli"):
+                        st.info(f"Editando: {escolha}")
+                        
+                        col_e1, col_e2 = st.columns(2)
+                        
+                        # COLUNA 1
+                        with col_e1:
+                            novo_nome = st.text_input("Nome", value=dados.get("cliente", ""))
                             
-                            if st.form_submit_button("Salvar Alterações"):
-                                id_alvo = dict_mot[nome_sel]
-                                try:
-                                    supabase.table("motoristas").update({"motorista": novo_nome_mot}).eq("id", id_alvo).execute()
-                                    st.success("Motorista atualizado!")
-                                    carregar_motoristas_supabase.clear()
-                                    tm.sleep(1)
-                                    st.rerun()
-                                    
-                                except Exception as e:
-                                    st.error(f"Erro ao atualizar: {e}")
+                            val_cnpj = dados.get("cnpj")
+                            novo_cnpj = st.text_input("CNPJ", value=str(val_cnpj) if val_cnpj else "")
 
-        # =========================================================
-        # 2. GERENCIAR CIDADES
-        # =========================================================
-        elif menu_cadastro == "Cidades":
-            st.subheader("Gerenciar Cidades")
-            modo_cid = st.radio("Ação:", ["Cadastrar Nova", "Editar Existente"], horizontal=True, key="radio_cid")
-
-            if modo_cid == "Cadastrar Nova":
-                with st.form("form_cid_novo", clear_on_submit=True):
-                    nc = st.text_input("Nome da Cidade")
-                    if st.form_submit_button("Salvar Nova Cidade"):
-                        if nc:
-                            suc, msg = inserir_cidade(nc)
-                            if suc: 
-                                st.success(msg)
-                                carregar_cidades_supabase.clear()
-                            else: st.error(msg)
-                        else: st.warning("Digite a cidade.")
-            else:
-                try:
-                    res = supabase.table("cidades").select("cidade, id").execute()
-                    lista_cid = sorted(res.data, key=lambda x: x.get('cidade', '')) if res.data else []
-                except: lista_cid = []
-
-                if not lista_cid:
-                    st.info("Nenhuma cidade cadastrada.")
-                else:
-                    dict_cid = {c['cidade']: c['id'] for c in lista_cid if c.get('cidade')}
-                    
-                    cid_sel = st.selectbox(
-                        "Selecione a Cidade:", 
-                        options=list(dict_cid.keys()), 
-                        index=None,
-                        placeholder="Selecione...",
-                        key="sel_cid_edit"
-                    )
-                    
-                    if cid_sel:
-                        with st.form("form_cid_edit"):
-                            nova_nome_cid = st.text_input("Editar Nome:", value=cid_sel)
-                            if st.form_submit_button("Salvar Alterações"):
-                                id_alvo = dict_cid[cid_sel]
-                                suc, msg = atualizar_cidade(id_alvo, nova_nome_cid)
-                                if suc:
-                                    st.success(msg)
-                                    carregar_cidades_supabase.clear()
-                                    tm.sleep(1)
-                                    st.rerun()
-                                else: st.error(msg)
-
-        # =========================================================
-        # 3. GERENCIAR CLIENTES
-        # =========================================================
-        elif menu_cadastro == "Clientes":
-            st.subheader("Gerenciar Clientes")
-            
-            lista_focais_disp = carregar_focal_supabase()
-            opcao_gerencia = st.radio("Ação:", ["➕ Cadastrar Novo", "✏️ Editar Existente"], horizontal=True, key="radio_cli")
-            st.markdown("---")
-
-            # --- CADASTRAR NOVO ---
-            if opcao_gerencia == "➕ Cadastrar Novo":
-                with st.form("form_novo_cli", clear_on_submit=True):
-                    st.markdown("##### Novo Cliente")
-                    
-                    col_n1, col_n2 = st.columns(2)
-                    
-                    # COLUNA 1
-                    with col_n1:
-                        nome = st.text_input("Nome (MAIÚSCULO)")
-                        cnpj_novo = st.text_input("CNPJ")
-                        focal = st.selectbox("Focal", options=lista_focais_disp)
-                        rec_email = st.checkbox("Cliente irá Receber E-mail de Notificação?", value=False)
-
-                    # COLUNA 2
-                    with col_n2:
-                        email_p = st.text_input("E-mail Principal")
-                        email_c = st.text_input("Emails em Cópia (;)")
-                    
-                    st.markdown("---")
-                    if st.form_submit_button("Salvar Novo Cliente"):
-                        erros = []
-                        if not nome: erros.append("Nome obrigatório.")
-                        elif not validar_texto_maiusculo(nome): erros.append("Nome deve ser MAIÚSCULO.")
-                        if not focal: erros.append("Selecione um focal.")
+                            focal_atual = dados.get("focal", "")
+                            idx_f = lista_focais_disp.index(focal_atual) if focal_atual in lista_focais_disp else 0
+                            novo_focal = st.selectbox("Focal", options=lista_focais_disp, index=idx_f)
+                            
+                            val_rec = dados.get("receber_emails")
+                            novo_rec = st.checkbox("Cliente irá Receber E-mail de Notificação?", value=bool(val_rec))
                         
-                        # Validação de e-mail principal e cópia
-                        if email_p and not validar_email(email_p):
-                            erros.append("Formato do E-mail Principal inválido.")
-                        if email_c and not validar_emails_multiplos(email_c):
-                            erros.append("Formato de um ou mais E-mails em Cópia inválido.")
+                        # COLUNA 2
+                        with col_e2:
+                            val_ep = dados.get("enviar_para_email")
+                            val_ec = dados.get("email_copia")
+                            novo_ep = st.text_input("E-mail Principal", value=str(val_ep) if val_ep else "")
+                            novo_ec = st.text_input("Emails em Cópia (;)", value=str(val_ec) if val_ec else "")
                         
-                        if erros:
-                            for e in erros: st.error(e)
-                        else:
-                            suc, msg = inserir_cliente(nome, focal, rec_email, email_p, email_c, cnpj_novo)
+                        st.markdown("---")
+                        if st.form_submit_button("Salvar Alterações"):
+                            dados_up = {
+                                "cliente": novo_nome,
+                                "cnpj": novo_cnpj,
+                                "focal": novo_focal,
+                                "receber_emails": novo_rec,
+                                "enviar_para_email": novo_ep,
+                                "email_copia": novo_ec
+                            }
+                            suc, msg = atualizar_cliente(dados['id'], dados_up)
                             if suc:
                                 st.success(msg)
                                 carregar_clientes_supabase.clear()
                                 tm.sleep(1)
                                 st.rerun()
                             else: st.error(msg)
+        
+        # TABELA GERAL
+        st.markdown("### Lista de Clientes")
+        df_view = carregar_clientes_supabase()
+        if not df_view.empty:
+            cols_view = ["cliente", "cnpj", "focal", "enviar_para_email"]
+            cols_reais = [c for c in cols_view if c in df_view.columns]
+            st.dataframe(df_view[cols_reais], use_container_width=True)
 
-            # --- EDITAR EXISTENTE ---
-            elif opcao_gerencia == "✏️ Editar Existente":
-                try:
-                    res = supabase.table("clientes").select("cliente, id, focal, receber_emails, enviar_para_email, email_copia, cnpj").range(0, 3000).order("cliente").execute()
-                    df_edit = pd.DataFrame(res.data) if res.data else pd.DataFrame()
-                except Exception as e:
-                    st.error(f"Erro: {e}")
-                    df_edit = pd.DataFrame()
-
-                if df_edit.empty:
-                    st.warning("Sem clientes.")
-                else:
-                    nomes = df_edit["cliente"].tolist()
-                    
-                    escolha = st.selectbox(
-                        "Selecione o Cliente para editar:", 
-                        options=nomes, 
-                        index=None, 
-                        placeholder="Selecionar..."
-                    )
-                    
-                    # O formulário só aparece se 'escolha' não for vazio
-                    if escolha:
-                        # Pega dados
-                        dados = df_edit[df_edit["cliente"] == escolha].iloc[0]
-                        
-                        with st.form("form_edit_cli"):
-                            st.info(f"Editando: {escolha}")
-                            
-                            col_e1, col_e2 = st.columns(2)
-                            
-                            # COLUNA 1
-                            with col_e1:
-                                novo_nome = st.text_input("Nome", value=dados.get("cliente", ""))
-                                
-                                val_cnpj = dados.get("cnpj")
-                                novo_cnpj = st.text_input("CNPJ", value=str(val_cnpj) if val_cnpj else "")
-
-                                focal_atual = dados.get("focal", "")
-                                idx_f = lista_focais_disp.index(focal_atual) if focal_atual in lista_focais_disp else 0
-                                novo_focal = st.selectbox("Focal", options=lista_focais_disp, index=idx_f)
-                                
-                                val_rec = dados.get("receber_emails")
-                                novo_rec = st.checkbox("Cliente irá Receber E-mail de Notificação?", value=bool(val_rec))
-                            
-                            # COLUNA 2
-                            with col_e2:
-                                val_ep = dados.get("enviar_para_email")
-                                val_ec = dados.get("email_copia")
-                                novo_ep = st.text_input("E-mail Principal", value=str(val_ep) if val_ep else "")
-                                novo_ec = st.text_input("Emails em Cópia (;)", value=str(val_ec) if val_ec else "")
-                            
-                            st.markdown("---")
-                            if st.form_submit_button("Salvar Alterações"):
-                                erros_edit = []
-                                if not novo_nome: erros_edit.append("Nome obrigatório.")
-                                elif not validar_texto_maiusculo(novo_nome): erros_edit.append("Nome deve ser MAIÚSCULO.")
-                                if not novo_focal: erros_edit.append("Selecione um focal.")
-                                
-                                # Validação de e-mail principal e cópia
-                                if novo_ep and not validar_email(novo_ep):
-                                    erros_edit.append("Formato do E-mail Principal inválido.")
-                                if novo_ec and not validar_emails_multiplos(novo_ec):
-                                    erros_edit.append("Formato de um ou mais E-mails em Cópia inválido.")
-
-                                if erros_edit:
-                                    for e in erros_edit: st.error(e)
-                                else:
-                                    dados_up = {
-                                        "cliente": novo_nome,
-                                        "cnpj": novo_cnpj,
-                                        "focal": novo_focal,
-                                        "receber_emails": novo_rec,
-                                        "enviar_para_email": novo_ep,
-                                        "email_copia": novo_ec
-                                    }
-                                    suc, msg = atualizar_cliente(dados['id'], dados_up)
-                                    if suc:
-                                        st.success(msg)
-                                        carregar_clientes_supabase.clear()
-                                        tm.sleep(1)
-                                        st.rerun()
-                                    else: st.error(msg)
-            
-            # TABELA GERAL
-            st.markdown("### Lista de Clientes")
-            df_view = carregar_clientes_supabase()
-            if not df_view.empty:
-                cols_view = ["cliente", "cnpj", "focal", "enviar_para_email"]
-                cols_reais = [c for c in cols_view if c in df_view.columns]
-                st.dataframe(df_view[cols_reais], use_container_width=True)
-
-        # =========================================================
-        # 4. CONFIGURAÇÕES
-        # =========================================================
-        elif menu_cadastro == "Configurações":
-            st.subheader("Configurações de Tempo de Envio")
-            tempo_atual = carregar_tempo_envio_email()
-            tempo_envio = st.slider("Minutos para alerta:", 1, 60, value=tempo_atual)
-            
-            if st.button("Salvar Configuração"):
-                suc, msg = atualizar_tempo_envio_email(tempo_envio)
-                if suc: st.success(msg)
-                else: st.error(msg)
+    # =========================================================
+    # 4. CONFIGURAÇÕES
+    # =========================================================
+    elif menu_cadastro == "Configurações":
+        st.subheader("Configurações de Tempo de Envio")
+        tempo_atual = carregar_tempo_envio_email()
+        tempo_envio = st.slider("Minutos para alerta:", 1, 60, value=tempo_atual)
+        
+        if st.button("Salvar Configuração"):
+            suc, msg = atualizar_tempo_envio_email(tempo_envio)
+            if suc: st.success(msg)
+            else: st.error(msg)
