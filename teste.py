@@ -30,10 +30,7 @@ from dotenv import load_dotenv
 
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
-import streamlit as st
-from streamlit_autorefresh import st_autorefresh
 from streamlit_cookies_manager import EncryptedCookieManager
-
 from supabase import create_client, Client as SupabaseClient
 
 load_dotenv()
@@ -42,23 +39,37 @@ load_dotenv()
 # 1. CONFIGURAÇÕES GLOBAIS E CHAVES (EMAIL, SUPABASE, FUSO HORÁRIO)
 # ====================================================================
 
-# --- CONFIGURAÇÕES DE E-MAIL DA KINGHOST ---
-EMAIL_REMETENTE = "ticket@clicklogtransportes.com.br"
-EMAIL_SENHA = "Tkt@335clk" # Senha real da conta
-SMTP_HOST = "smtp.kinghost.net"
-SMTP_PORT = 587
-socket.setdefaulttimeout(30)  # Aumentado o timeout para operações de socket
+# --- CONFIGURAÇÕES DE E-MAIL DO MAILJET ---
+# O e-mail do remetente (FROM) DEVE ser verificado no Mailjet
+EMAIL_REMETENTE = "ticket@clicklogtransportes.com.br" 
+
+# Credenciais do Mailjet, carregadas dos secrets do Streamlit Cloud
+# A API Key Pública do Mailjet é o SMTP_USERNAME
+# A API Secret Key do Mailjet é o SMTP_PASSWORD
+SMTP_USERNAME = "4e56fc4aaecd24a091a4f9c9009000cf" 
+SMTP_PASSWORD = "fd1ca66075fdef9915c54fe076f00fda"
+
+# Servidor SMTP do Mailjet
+SMTP_HOST = "in-v3.mailjet.com" # Host SMTP para envio do Mailjet
+SMTP_PORT = 587 # Porta padrão para TLS
+
+socket.setdefaulttimeout(30) # Mantido, útil para qualquer conexão socket
 
 # --- DEFINIÇÃO DO FUSO HORÁRIO BRASILEIRO ---
 FUSO_HORARIO_BRASIL = pytz.timezone("America/Sao_Paulo")
 
 # --- SETUP DO COOKIE MANAGER ---
 cookies = EncryptedCookieManager(
-    prefix="meu_app_",  # Prefixo dos cookies
-    password="chave-muito-secreta-para-cookies"  # Troque por uma senha forte
+    prefix="meu_app_", # Prefixo dos cookies
+    password="chave-muito-secreta-para-cookies" # Troque por uma senha forte
 )
 if not cookies.ready():
     st.stop()
+
+
+#--------------------------------------------------------------------------------------------
+
+
 
 # --- CONEXÃO COM O SUPABASE ---
 url = "https://vismjxhlsctehpvgmata.supabase.co"  # ✅ sua URL real
@@ -436,6 +447,22 @@ def carregar_ocorrencias_abertas():
     except Exception as e:
         st.error(f"Erro ao carregar ocorrências abertas: {e}")
         return []
+#--------------------------------------------------------------------------------------------------------------------
+# --- FUNÇÃO OTIMIZADA PARA ALERTAS (Coloque próximo à linha 370) ---
+def carregar_tickets_para_alerta():
+    """Busca apenas tickets abertos que ainda não enviaram e-mail (Otimizado)."""
+    try:
+        # Filtramos no banco: Status 'Aberta' e e-mail de 30/90min não enviado
+        # Selecionamos apenas colunas de texto leves
+        response = supabase.table("ocorrencias") \
+            .select("id, numero_ticket, cliente, data_abertura_manual, hora_abertura_manual, email_enviado_abertura, email_enviado_90min") \
+            .eq("status", "Aberta") \
+            .or_("email_enviado_abertura.eq.false,email_enviado_90min.eq.false") \
+            .execute()
+        return response.data
+    except Exception as e:
+        print(f"Erro na busca de alertas: {e}")
+        return []
 
 # Função para carregar ocorrências por focal
 def carregar_ocorrencias_por_focal(focal=None):
@@ -552,78 +579,105 @@ def finalizar_ocorrencia(ocorr, complemento, data_finalizacao_manual, hora_final
 # 6. FUNÇÕES DE E-MAIL (ENVIO E VERIFICAÇÃO)
 # ====================================================================
 
+# Copie esta função INTEIRA e cole no seu script, substituindo a versão antiga de enviar_email
 def enviar_email(destinatario, copia, assunto, corpo, imagem_url=None):
-    """Envia e-mail com corpo HTML e anexo de imagem (se fornecido)."""
+    """Envia e-mail com corpo HTML e anexo de imagem (se fornecido) via Mailjet SMTP."""
     
     # --- FUNÇÃO AUXILIAR PARA LIMPAR E-MAILS ---
-    # Aceita vírgula ou ponto e vírgula e retorna uma lista limpa
     def processar_lista_emails(texto):
         if not texto:
             return []
-        # Troca vírgulas por ponto e vírgula para padronizar o split
         texto = texto.replace(',', ';')
         return [e.strip() for e in texto.split(';') if e.strip()]
 
     try:
-        # Processa as listas corretamente
+        if not SMTP_USERNAME or not SMTP_PASSWORD:
+            return False, "Erro: Credenciais SMTP do Mailjet (MAILJET_SMTP_USERNAME ou MAILJET_SMTP_PASSWORD) não configuradas no Streamlit Secrets ou variáveis de ambiente."
+
         lista_destinatarios = processar_lista_emails(destinatario)
         lista_copia = processar_lista_emails(copia)
         
-        # Se não houver destinatário válido, retorna erro antes de tentar conectar
         if not lista_destinatarios:
             return False, "Nenhum e-mail de destinatário válido encontrado."
 
-        # Lista final para o servidor SMTP (soma das duas listas)
         todos_destinatarios = lista_destinatarios + lista_copia
 
         # Criar mensagem
-        msg = MIMEMultipart()
+        msg = MIMEMultipart('alternative') # Usar 'alternative' para corpo HTML
         msg['From'] = EMAIL_REMETENTE
-        # O cabeçalho 'To' deve ser uma string unida por vírgulas para visualização
         msg['To'] = ', '.join(lista_destinatarios)
         
-        # CC (cópia) - Cabeçalho visual
         if lista_copia:
             msg['Cc'] = ', '.join(lista_copia)
 
         msg['Subject'] = assunto
         msg['Reply-To'] = "naoresponda@clicklog.com.br" 
 
-        msg.attach(MIMEText(corpo, 'html'))
+        msg.attach(MIMEText(corpo, 'html', 'utf-8')) # Adicionei utf-8 para garantir caracteres especiais
 
         # 📎 Anexar imagem (se fornecida e válida)
         if imagem_url:
             try:
-                # Adicionado timeout=5 para não travar o app se a imagem demorar
                 response = requests.get(imagem_url, timeout=5) 
                 if response.status_code == 200:
                     img_data = response.content
                     image_mime = MIMEImage(img_data)
                     image_mime.add_header('Content-Disposition', 'attachment', filename="imagem_ocorrencia.jpg")
                     msg.attach(image_mime)
-            except Exception:
+            except Exception as e:
+                print(f"⚠️ Mailjet SMTP: Erro ao processar imagem para anexo: {e}")
                 # Silencia erro de imagem para garantir que o texto chegue
-                pass 
 
         # Enviar via SMTP
         server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15)
-        server.starttls()
-        server.login(EMAIL_REMETENTE, EMAIL_SENHA)
+        server.starttls() # Iniciar conexão segura
+        server.login(SMTP_USERNAME, SMTP_PASSWORD) # Usar as credenciais do Mailjet
         
-        # Aqui enviamos a lista processada (Python List), não strings com ;
         server.sendmail(EMAIL_REMETENTE, todos_destinatarios, msg.as_string())
         
         server.quit()
 
-        return True, "E-mail enviado com sucesso"
+        return True, "E-mail enviado com sucesso via Mailjet"
 
-    except socket.timeout:
-        return False, "Timeout ao conectar ao servidor SMTP. Possível bloqueio de firewall."
     except smtplib.SMTPAuthenticationError:
-        return False, "Falha na autenticação. Verifique usuário e senha."
+        return False, "Falha na autenticação SMTP com Mailjet. Verifique seu SMTP_USERNAME e SMTP_PASSWORD."
+    except smtplib.SMTPException as e:
+        return False, f"Erro SMTP com Mailjet: {e}"
     except Exception as e:
-        return False, f"Erro ao enviar e-mail: {str(e)}"
+        return False, f"Erro inesperado ao enviar e-mail via Mailjet: {str(e)}"
+#--------------------------------------------------------------------------------------------
 
+# --- COLOQUE ESTE BLOCO APÓS AS FUNÇÕES DE E-MAIL ---
+
+def processar_envio_automatico():
+    """Verifica e envia e-mails para tickets que passaram do tempo limite (Otimizado)."""
+    try:
+        # 1. Busca rápida: apenas tickets abertos que ainda não tiveram algum dos e-mails enviados
+        response = supabase.table("ocorrencias") \
+            .select("id, numero_ticket, cliente, data_abertura_manual, hora_abertura_manual, email_enviado_abertura, email_enviado_90min") \
+            .eq("status", "Aberta") \
+            .or_("email_enviado_abertura.eq.false,email_enviado_90min.eq.false") \
+            .execute()
+        
+        tickets_pendentes = response.data
+        if not tickets_pendentes:
+            return
+
+        for ocorr in tickets_pendentes:
+            # 2. Chama a sua função real de verificação e envio de abertura (30 min)
+            if not ocorr.get("email_enviado_abertura"):
+                # Esta função já checa o tempo e envia o e-mail se necessário
+                verificar_e_enviar_email_abertura(ocorr) 
+
+            # 3. Chama a sua função real de verificação e envio de 90 min
+            if not ocorr.get("email_enviado_90min"):
+                # Certifique-se de que esta função existe no seu código (baseado no snippet 27)
+                verificar_e_enviar_email_90min(ocorr)
+
+    except Exception as e:
+        print(f"⚠️ Erro no processamento automático: {e}")
+
+#---------------------------------------------------------------------------------------------
 def carregar_dados_clientes_email():
     try:
         response = supabase.table("clientes").select("cliente, enviar_para_email, email_copia").execute()
@@ -641,6 +695,8 @@ def carregar_dados_clientes_email():
         st.error(f"Erro ao carregar e-mails dos clientes: {e}")
         return {}
 
+
+# --- COLOQUE ESTE BLOCO APÓS AS FUNÇÕES DE E-MAIL ---
 def obter_ocorrencias_abertas_30min():
     """Obtém ocorrências abertas que ainda não receberam e-mail de abertura (30min)."""
     try:
@@ -1142,7 +1198,7 @@ def testar_conexao_smtp():
     try:
         server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=5)
         server.starttls()
-        server.login(EMAIL_REMETENTE, EMAIL_SENHA)
+        server.login(EMAIL_REMETENTE, SMTP_PASSWORD)
         server.quit()
         return True, "Conexão SMTP testada com sucesso!"
     except socket.timeout:
@@ -1650,7 +1706,11 @@ if st.session_state.get("login", False):
     # =========================
     if st.session_state.aba_ativa == "aba2":
         # ⏱️ Reintroduzindo o st_autorefresh para acionar a verificação a cada 7 minutos
-        st_autorefresh(interval=7 * 60 * 1000, key="auto_refresh_abertas") 
+        counter = st_autorefresh(interval=7 * 60 * 1000, key="email_check_counter")
+
+        if counter > 0:
+            # Roda o processamento pesado de forma silenciosa
+            processar_envio_automatico()
         
         # --- Bloco de verificação de e-mails, agora acionado pelo autorefresh ---
         agora = datetime.now()
