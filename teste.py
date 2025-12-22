@@ -42,30 +42,12 @@ load_dotenv()
 # 1. CONFIGURAÇÕES GLOBAIS E CHAVES (EMAIL, SUPABASE, FUSO HORÁRIO)
 # ====================================================================
 
-# --- CONFIGURAÇÕES DE E-MAIL DO GMAIL ---
-
-#EMAIL_REMETENTE = "ticketclicklogtransportes@gmail.com"
-#EMAIL_SENHA = "hlossktfkqlsxepo"
-
-
-
-#EMAIL_REMETENTE = "ticketclicklogtransportes02@gmail.com"
-#EMAIL_SENHA = "xqpdtzfivtebfgvs" # Coloque a senha de 16 letras que você acabou de gerar (sem os espaços)
-#SMTP_HOST = "smtp.gmail.com"
-#SMTP_PORT = 587
-#socket.setdefaulttimeout(30)  # 10 segundos de timeout
-
-
-#-------------------------------------
-# envio de email pela kinghost
-#------------------------------------
+# --- CONFIGURAÇÕES DE E-MAIL DA KINGHOST ---
 EMAIL_REMETENTE = "ticket@clicklogtransportes.com.br"
-EMAIL_SENHA = "Tkt@335clk" # Coloque a senha de 16 letras que você acabou de gerar (sem os espaços)
+EMAIL_SENHA = "Tkt@335clk" # Senha real da conta
 SMTP_HOST = "smtp.kinghost.net"
 SMTP_PORT = 587
-socket.setdefaulttimeout(30)  # 10 segundos de timeout
-
-#-----------------------------------------
+socket.setdefaulttimeout(30)  # Aumentado o timeout para operações de socket
 
 # --- DEFINIÇÃO DO FUSO HORÁRIO BRASILEIRO ---
 FUSO_HORARIO_BRASIL = pytz.timezone("America/Sao_Paulo")
@@ -79,8 +61,8 @@ if not cookies.ready():
     st.stop()
 
 # --- CONEXÃO COM O SUPABASE ---
-url = "https://vismjxhlsctehpvgmata.supabase.co"  # ✅ sua URL real, já sem o '>' no meio
-key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZpc21qeGhsc2N0ZWhwdmdtYXRhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDY1NzA4NTIsImV4cCI6MjA2MjE0Njg1Mn0.zTjSWenfuVJTIixq2RThSUpqcHGfZWP2xkFDU3USPb0"  # ✅ sua chave real (evite expor em público!)
+url = "https://vismjxhlsctehpvgmata.supabase.co"  # ✅ sua URL real
+key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZpc21qeGhsc2N0ZWhwdmdtYXRhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDY1NzA4NTIsImV4cCI6MjA2MjE0Njg1Mn0.zTjSWenfuVJTIixq2RThSUpqcHGfZWP2xkFDU3USPb0"  # ✅ sua chave real
 supabase = create_client(url, key)
 
 # ====================================================================
@@ -442,12 +424,14 @@ def carregar_tempo_envio_email():
 @st.cache_data(ttl=420) # Cache válido por 7 minutos (420 segundos)
 def carregar_ocorrencias_abertas():
     try:
+        # Selecionar apenas as colunas relevantes para a exibição dos cards
+        cols = "id, numero_ticket, nota_fiscal, cliente, focal, destinatario, cidade, motorista, tipo_de_ocorrencia, observacoes, responsavel, status, data_abertura_manual, hora_abertura_manual, email_enviado_abertura, email_enviado_90min, imagem_url"
         if st.session_state.is_admin:
-            response = supabase.table("ocorrencias").select("*").eq("status", "Aberta").order("data_hora_abertura", desc=True).execute()
+            response = supabase.table("ocorrencias").select(cols).eq("status", "Aberta").order("data_hora_abertura", desc=True).execute()
         else:
             dados_usuario = supabase.table("usuarios").select("unidade").eq("nome_usuario", st.session_state.username).execute().data
             unidade_usuario = dados_usuario[0]["unidade"] if dados_usuario else None
-            response = supabase.table("ocorrencias").select("*").eq("status", "Aberta").eq("ticket_unidade", unidade_usuario).order("data_hora_abertura", desc=True).execute()
+            response = supabase.table("ocorrencias").select(cols).eq("status", "Aberta").eq("ticket_unidade", unidade_usuario).order("data_hora_abertura", desc=True).execute()
         return response.data
     except Exception as e:
         st.error(f"Erro ao carregar ocorrências abertas: {e}")
@@ -456,12 +440,14 @@ def carregar_ocorrencias_abertas():
 # Função para carregar ocorrências por focal
 def carregar_ocorrencias_por_focal(focal=None):
     try:
+        # Selecionar apenas as colunas relevantes
+        cols = "id, numero_ticket, nota_fiscal, cliente, focal, destinatario, cidade, motorista, tipo_de_ocorrencia, observacoes, responsavel, status, data_abertura_manual, hora_abertura_manual, email_enviado_abertura, email_enviado_90min, imagem_url"
         if st.session_state.is_admin:
-            response = supabase.table("ocorrencias").select("*").eq("status", "Aberta").eq("focal", focal).order("data_hora_abertura", desc=True).execute()
+            response = supabase.table("ocorrencias").select(cols).eq("status", "Aberta").eq("focal", focal).order("data_hora_abertura", desc=True).execute()
         else:
             dados_usuario = supabase.table("usuarios").select("unidade").eq("nome_usuario", st.session_state.username).execute().data
             unidade_usuario = dados_usuario[0]["unidade"] if dados_usuario else None
-            response = supabase.table("ocorrencias").select("*").eq("status", "Aberta").eq("focal", focal).eq("ticket_unidade", unidade_usuario).order("data_hora_abertura", desc=True).execute()
+            response = supabase.table("ocorrencias").select(cols).eq("status", "Aberta").eq("focal", focal).eq("ticket_unidade", unidade_usuario).order("data_hora_abertura", desc=True).execute()
         return response.data
     except Exception as e:
         st.error(f"Erro ao carregar ocorrências por focal: {e}")
@@ -470,7 +456,7 @@ def carregar_ocorrencias_por_focal(focal=None):
 # Função para obter lista de focais com contagem de tickets
 def obter_focais_com_contagem():
     try:
-        ocorrencias = carregar_ocorrencias_abertas()
+        ocorrencias = carregar_ocorrencias_abertas() # Esta função já usa cache
         
         # Agrupar por focal e contar
         focais_contagem = {}
@@ -503,17 +489,11 @@ def finalizar_ocorrencia(ocorr, complemento, data_finalizacao_manual, hora_final
             data_finalizacao_obj = data_finalizacao_manual
             data_hora_finalizacao = datetime.combine(data_finalizacao_obj, hora_finalizacao_manual)
 
-            # 🧪 Diagnóstico: antes do fuso
-            # st.write("💡 Data final manual (antes do fuso):", data_hora_finalizacao.strftime("%Y-%m-%d %H:%M:%S"))
-
             # 🔧 Etapa 2: garantir que o fuso horário brasileiro seja aplicado corretamente
             if data_hora_finalizacao.tzinfo is None:
                 data_hora_finalizacao = FUSO_HORARIO_BRASIL.localize(data_hora_finalizacao)
             else:
                 data_hora_finalizacao = data_hora_finalizacao.astimezone(FUSO_HORARIO_BRASIL)
-
-            # 🧪 Diagnóstico: depois do fuso
-            # st.write("🕓 Data final (com fuso):", data_hora_finalizacao.strftime("%Y-%m-%d %H:%M:%S %Z"))
             
             # 🔧 Etapa 3: criar datetime de abertura
             data_hora_abertura = criar_datetime_manual(data_abertura_manual, hora_abertura_manual)
@@ -544,7 +524,7 @@ def finalizar_ocorrencia(ocorr, complemento, data_finalizacao_manual, hora_final
                 "status": "Finalizada",
                 "permanencia_manual": permanencia_manual,
                 "data_finalizacao_manual": data_finalizacao_banco,
-                "hora_finalizacao_banco": hora_finalizacao_banco, # Nome da coluna ajustado de 'hora_finalizacao_manual'
+                "hora_finalizacao_manual": hora_finalizacao_banco, # Mantido 'hora_finalizacao_manual' no código, assumindo que esta é a coluna
                 "email_finalizacao_enviado": False,
                 "observacao_final": observacao_final,
                 "numero_manifesto": numero_manifesto_val, 
@@ -554,7 +534,7 @@ def finalizar_ocorrencia(ocorr, complemento, data_finalizacao_manual, hora_final
             if response and response.data:
                 # 📧 Enviar e-mail de finalização (passa a ocorrência atualizada)
                 ocorr_atualizada = response.data[0]
-                enviar_email_finalizacao(ocorr_atualizada)
+                enviar_email_finalizacao(ocorr_atualizada) # Chama a função que já registra no emails_enviados
                 
                 return True, "Ocorrência finalizada com sucesso!"
             else:
@@ -664,7 +644,9 @@ def carregar_dados_clientes_email():
 def obter_ocorrencias_abertas_30min():
     """Obtém ocorrências abertas que ainda não receberam e-mail de abertura (30min)."""
     try:
-        response = supabase.table("ocorrencias").select("*").eq("status", "Aberta").eq("email_enviado_abertura", False).execute()
+        # Selecionar apenas as colunas relevantes para a lógica de e-mail e atualização
+        cols = "id, numero_ticket, nota_fiscal, cliente, focal, destinatario, cidade, motorista, tipo_de_ocorrencia, observacoes, responsavel, status, data_abertura_manual, hora_abertura_manual, email_enviado_abertura, imagem_url"
+        response = supabase.table("ocorrencias").select(cols).eq("status", "Aberta").eq("email_enviado_abertura", False).execute()
         return response.data if response.data else []
     except Exception as e:
         st.error(f"Erro ao obter ocorrências abertas para 30min: {e}")
@@ -673,10 +655,10 @@ def obter_ocorrencias_abertas_30min():
 def obter_ocorrencias_abertas_90min():
     """Obtém ocorrências abertas que ainda não receberam o e-mail de 90 minutos."""
     try:
-        # A flag no banco é `email_enviado_90min`.
-        # Precisamos buscar ocorrências onde essa flag é False ou é NULL (para as mais antigas).
+        # Selecionar apenas as colunas relevantes para a lógica de e-mail e atualização
+        cols = "id, numero_ticket, nota_fiscal, cliente, focal, destinatario, cidade, motorista, tipo_de_ocorrencia, observacoes, responsavel, status, data_abertura_manual, hora_abertura_manual, email_enviado_abertura, email_enviado_90min, imagem_url"
         response = supabase.table("ocorrencias") \
-            .select("*") \
+            .select(cols) \
             .eq("status", "Aberta") \
             .or_("email_enviado_90min.is.null,email_enviado_90min.eq.false") \
             .execute()
@@ -723,7 +705,7 @@ def enviar_email_finalizacao(ocorr_atualizada):
             
             # Obter dados de abertura e finalização
             data_abertura = f"{ocorr_atualizada.get('data_abertura_manual', '-')} {ocorr_atualizada.get('hora_abertura_manual', '-')}"
-            data_finalizacao = f"{ocorr_atualizada.get('data_finalizacao_manual', '-')} {ocorr_atualizada.get('hora_finalizacao_banco', '-')}" # Ajuste para 'hora_finalizacao_banco'
+            data_finalizacao = f"{ocorr_atualizada.get('data_finalizacao_manual', '-')} {ocorr_atualizada.get('hora_finalizacao_manual', '-')}" # Mantido 'hora_finalizacao_manual'
             
             # Obter imagem (se houver)
             imagem_url = ocorr_atualizada.get("imagem_finalizacao_url", "")
@@ -780,17 +762,17 @@ def enviar_email_finalizacao(ocorr_atualizada):
             if sucesso:
                 marcar_email_como_enviado(ocorr_atualizada["id"], "finalizacao")
 
-                # Registrar no Supabase
+                # --- NOVO: Registrar envio na tabela emails_enviados ---
                 supabase.table("emails_enviados").insert({
                     "data_hora": obter_data_hora_atual_brasil().isoformat(),
                     "tipo": "Finalização",
                     "cliente": cliente,
-                    "email": email_principal,
+                    "email": email_principal, # ou todos os destinatários se preferir
                     "ticket": ocorr_atualizada.get('numero_ticket', '-'),
                     "nota_fiscal": ocorr_atualizada.get('nota_fiscal', '-'),
                     "status": "Enviado"
                 }).execute()
-
+                # ------------------------------------------------------
                 return True, "E-mail de finalização enviado com sucesso"
             else:
                 return False, mensagem
@@ -810,7 +792,7 @@ def verificar_e_enviar_email_abertura(ocorrencia):
     # 1. Ignorar se já foi enviado ou finalizado
     if ocorrencia.get("email_enviado_abertura") is True:
         return False, "E-mail de abertura já enviado."
-    if ocorrencia.get("status") == "Finalizada": # Ajustei para "Finalizada"
+    if ocorrencia.get("status") == "Finalizada":
         return False, "Ocorrência já finalizada."
 
     try:
@@ -923,20 +905,19 @@ def verificar_e_enviar_email_abertura(ocorrencia):
             if enviou:
                 print(f"✅ Sucesso envio {tempo_limite_min}min: {msg}")
                 supabase.table("ocorrencias").update({"email_enviado_abertura": True}).eq("id", ocorrencia["id"]).execute()
-                # Atualiza Flag Local (para não tentar enviar de novo na mesma execução)
                 ocorrencia["email_enviado_abertura"] = True
-
 
                 # --- NOVO: Registrar envio na tabela emails_enviados ---
                 supabase.table("emails_enviados").insert({
                     "data_hora": obter_data_hora_atual_brasil().isoformat(),
-                    "tipo": f"Alerta {tempo_limite_min}min", # ou "Alerta 30min"
+                    "tipo": f"Alerta {int(tempo_limite_min)}min",
                     "cliente": nome_cliente,
-                    "email": destinatario, # ou uma string com todos os destinatários se preferir
+                    "email": destinatario, # Ou uma string com todos os destinatários se preferir
                     "ticket": ocorrencia.get('numero_ticket', '-'),
                     "nota_fiscal": ocorrencia.get('nota_fiscal', '-'),
                     "status": "Enviado"
                 }).execute()
+                # --------------------------------------------------------
 
                 return True, f"E-mail de {tempo_limite_min}min enviado com sucesso."
             else:
@@ -959,7 +940,7 @@ def verificar_e_enviar_email_90min(ocorrencia):
     # 1. Ignorar se já foi enviado o de 90min ou finalizado
     if ocorrencia.get("email_enviado_90min") is True:
         return False, "E-mail de 90min já enviado."
-    if ocorrencia.get("status") == "Finalizada": # Ajustei para "Finalizada"
+    if ocorrencia.get("status") == "Finalizada":
         return False, "Ocorrência já finalizada."
 
     try:
@@ -1084,6 +1065,19 @@ def verificar_e_enviar_email_90min(ocorrencia):
                 print(f"✅ Sucesso envio 90min: {msg}")
                 supabase.table("ocorrencias").update({"email_enviado_90min": True}).eq("id", ocorrencia["id"]).execute()
                 ocorrencia["email_enviado_90min"] = True
+
+                # --- NOVO: Registrar envio na tabela emails_enviados ---
+                supabase.table("emails_enviados").insert({
+                    "data_hora": obter_data_hora_atual_brasil().isoformat(),
+                    "tipo": "Alerta 90min",
+                    "cliente": nome_cliente,
+                    "email": destinatario, # Ou uma string com todos os destinatários se preferir
+                    "ticket": ocorrencia.get('numero_ticket', '-'),
+                    "nota_fiscal": ocorrencia.get('nota_fiscal', '-'),
+                    "status": "Enviado"
+                }).execute()
+                # --------------------------------------------------------
+
                 return True, "E-mail de 90min enviado com sucesso."
             else:
                 print(f"❌ Falha envio 90min: {msg}")
@@ -1211,12 +1205,14 @@ def auto_sanitizar_ocorrencia(ocorr):
 @st.cache_data(ttl=420)      
 def carregar_ocorrencias_finalizadas():
     try:
+        # Selecionar apenas as colunas relevantes
+        cols = "id, numero_ticket, nota_fiscal, cliente, focal, destinatario, cidade, motorista, tipo_de_ocorrencia, observacoes, responsavel, status, data_abertura_manual, hora_abertura_manual, email_enviado_abertura, email_enviado_90min, imagem_url, data_hora_finalizacao, finalizado_por, complementar, permanencia_manual, data_finalizacao_manual, hora_finalizacao_manual, email_finalizacao_enviado, observacao_final, numero_manifesto, imagem_finalizacao_url"
         if st.session_state.is_admin:
-            response = supabase.table("ocorrencias").select("*").eq("status", "Finalizada").order("data_hora_finalizacao", desc=True).execute()
+            response = supabase.table("ocorrencias").select(cols).eq("status", "Finalizada").order("data_hora_finalizacao", desc=True).execute()
         else:
             dados_usuario = supabase.table("usuarios").select("unidade").eq("nome_usuario", st.session_state.username).execute().data
             unidade_usuario = dados_usuario[0]["unidade"] if dados_usuario else None
-            response = supabase.table("ocorrencias").select("*").eq("status", "Finalizada").eq("ticket_unidade", unidade_usuario).order("data_hora_finalizacao", desc=True).execute()
+            response = supabase.table("ocorrencias").select(cols).eq("status", "Finalizada").eq("ticket_unidade", unidade_usuario).order("data_hora_finalizacao", desc=True).execute()
         return response.data
     except Exception as e:
         st.error(f"Erro ao carregar ocorrências finalizadas: {e}")
@@ -1354,7 +1350,7 @@ if "focal_selecionado" not in st.session_state:
 if "tempo_envio_email" not in st.session_state:
     st.session_state.tempo_envio_email = carregar_tempo_envio_email() # Carrega o valor configurado
 
-# ====================================================================
+# =================================================ES===================
 # 10. LÓGICA PRINCIPAL DO APLICATIVO (APÓS LOGIN)
 # ====================================================================
 
@@ -1462,31 +1458,6 @@ if st.session_state.get("login", False):
     # Salva qual aba está ativa
     st.session_state.aba_ativa = current_user_abas_map[aba_nome]
 
-    # --- ADIÇÃO CRÍTICA PARA ENVIO DE E-MAILS PERIÓDICO AUTOMÁTICO ---
-    # Esta seção será executada toda vez que o script do Streamlit for re-executado (incluindo pelo st_autorefresh).
-    if st.session_state.aba_ativa == "aba2" and st.session_state.get("login", False):
-        agora = datetime.now()
-        if "ultima_verificacao_email" not in st.session_state:
-            st.session_state.ultima_verificacao_email = agora - timedelta(minutes=2) # Garante que rode na primeira vez
-
-        # Verifique se já passou tempo suficiente desde a última verificação
-        if agora - st.session_state.ultima_verificacao_email >= timedelta(minutes=1): # Ajuste o intervalo conforme a necessidade
-            print("📢 Aba 'Ocorrências em Aberto' ativa. Executando verificação e envio de e-mails periódicos...")
-            try:
-                # A função notificar_ocorrencias_abertas() já cuida de tudo
-                resultados_notificacao = notificar_ocorrencias_abertas()
-                
-                # feedback visual para o usuário (opcional, pode ser muito para cada refresh)
-                # if resultados_notificacao:
-                #     for res in resultados_notificacao:
-                #         if res["status"] == "sucesso":
-                #             st.toast(f"✅ {res['mensagem']} para {res['cliente']} - Ticket {res['ticket']}")
-                #         elif res["status"] == "erro":
-                #             st.toast(f"❌ {res['mensagem']} para {res['cliente']} - Ticket {res['ticket']}")
-                
-                st.session_state.ultima_verificacao_email = agora # Atualiza o timestamp da última verificação
-            except Exception as e:
-                print(f"❌ Erro ao executar notificação periódica: {e}")
 
     # =========================
     #     ABA 1 - NOVA OCORRENCIA
@@ -1639,13 +1610,12 @@ if st.session_state.get("login", False):
                         # pois elas já farão a verificação de tempo e o envio, se for o caso.
                         try:
                             print("💾 Ticket salvo. Verificando e-mails retroativos...")
-                            # Passamos a nova_ocorrencia. As funções acima agora lidam bem com ela.
                             
                             # 1. Verifica regra de 30 min (Se criado há 2h, vai disparar)
-                            verificar_e_enviar_email_abertura(nova_ocorrencia)
+                            verificar_e_enviar_email_abertura(nova_ocorrencia) # Passa o dicionário
                             
                             # 2. Verifica regra de 90 min (Se criado há 2h, vai disparar TAMBÉM)
-                            verificar_e_enviar_email_90min(nova_ocorrencia)
+                            verificar_e_enviar_email_90min(nova_ocorrencia) # Passa o dicionário
                             
                         except Exception as e:
                             print(f"❌ Erro crítico no disparo imediato: {e}")
@@ -1679,12 +1649,56 @@ if st.session_state.get("login", False):
     #     ABA 2 - EM ABERTO (COM CONTAGEM DINÂMICA)
     # =========================
     if st.session_state.aba_ativa == "aba2":
-        # 1. Definimos o Layout do Cabeçalho
-        col_titulo, col_botao = st.columns([5, 1])
+        # ⏱️ Reintroduzindo o st_autorefresh para acionar a verificação a cada 7 minutos
+        st_autorefresh(interval=7 * 60 * 1000, key="auto_refresh_abertas") 
+        
+        # --- Bloco de verificação de e-mails, agora acionado pelo autorefresh ---
+        agora = datetime.now()
+        # Inicializa 'ultima_verificacao_email' se não existir na session_state
+        if "ultima_verificacao_email" not in st.session_state:
+            # Garante que rode na 1ª carga ou 1 min após o primeiro ciclo para pegar atrasados
+            st.session_state.ultima_verificacao_email = agora - timedelta(minutes=8) # Set a value older than 7 minutes to ensure it runs on the first auto-refresh after being active.
 
-        # Botão de Atualizar (na direita)
-        with col_botao:
-            if st.button("🔄 Atualizar", key="btn_atualizar_abertas", use_container_width=True):
+        # Verifique se já passou tempo suficiente desde a última verificação
+        # A verificação deve ocorrer a cada 7 minutos para corresponder ao autorefresh
+        if agora - st.session_state.ultima_verificacao_email >= timedelta(minutes=7): 
+            print("📢 Executando verificação e envio de e-mails periódicos (a cada 7 min)...")
+            
+            # --- SPINNER PARA INDICAR PROCESSAMENTO ---
+            # ATENÇÃO: Este spinner indica que a tela estará bloqueada durante a execução desta parte.
+            with st.spinner("📧 Verificando tickets e enviando e-mails de alerta... A tela pode pausar por alguns instantes."):
+                try:
+                    # Clear cache for occurrence loading to ensure we get the latest flags
+                    carregar_ocorrencias_abertas.clear() 
+                    
+                    resultados_notificacao = notificar_ocorrencias_abertas()
+                    
+                    # Feedback visual (toast) para o usuário
+                    total_enviados = sum(1 for res in resultados_notificacao if res["status"] == "sucesso")
+                    total_erros = sum(1 for res in resultados_notificacao if res["status"] == "erro")
+                    
+                    if total_enviados > 0:
+                        st.toast(f"✅ {total_enviados} e-mail(s) de alerta enviados.")
+                    if total_erros > 0:
+                        st.toast(f"❌ {total_erros} e-mail(s) de alerta falharam. Verifique a Aba 'Notificações por E-mail'.")
+                    if total_enviados == 0 and total_erros == 0:
+                        st.toast("ℹ️ Nenhuma notificação de e-mail pendente encontrada ou enviada neste ciclo.")
+                    
+                    st.session_state.ultima_verificacao_email = agora # Atualiza o timestamp da última verificação
+                    
+                    # After sending, force a rerun so that the cards (email flags) are updated
+                    # and the spinner is removed, showing the updated state.
+                    st.rerun() 
+                except Exception as e:
+                    st.error(f"❌ Erro ao executar notificação periódica: {e}")
+            # --- FIM DO SPINNER ---
+        
+        # 1. Definimos o Layout do Cabeçalho
+        col_titulo, col_botao_atualizar = st.columns([5, 1]) 
+        
+        # Botão de Atualizar Dados (na direita)
+        with col_botao_atualizar:
+            if st.button("🔄 Atualizar Dados", key="btn_atualizar_abertas_aba2", use_container_width=True):
                 carregar_ocorrencias_abertas.clear() # Limpa o cache para recarregar
                 st.session_state.ocorrencias_abertas = carregar_ocorrencias_abertas()
 
@@ -1697,9 +1711,6 @@ if st.session_state.get("login", False):
             st.session_state.ocorrencias_abertas = carregar_ocorrencias_abertas()
 
         ocorrencias_abertas = st.session_state.get("ocorrencias_abertas", [])
-
-        # ⏱️ Auto refresh a cada 7 minutos
-        st_autorefresh(interval=7 * 60 * 1000, key="auto_refresh_abertas")
         
         # 3. Filtros
         # Prepara lista de focais únicos
@@ -1759,7 +1770,7 @@ if st.session_state.get("login", False):
                     safe_idx = f"{idx}_{ocorr.get('nota_fiscal', '')}"
                     email_enviado_30min = ocorr.get('email_enviado_abertura', False)
                     email_enviado_90min = ocorr.get('email_enviado_90min', False)
-                    imagem_abertura_url = ocorr.get('imagem_url', '') # Ajustei para 'ocorrencia', não 'ocorr' para manter consistência
+                    imagem_abertura_url = ocorr.get('imagem_url', '') 
                     
                     # HTML do Card
                     st.markdown(
@@ -1911,10 +1922,9 @@ if st.session_state.get("login", False):
 
                     data_finalizacao_manual = hora_finalizacao_manual = "-"
                     try:
-                        # Mudança de 'hora_finalizacao_manual' para 'hora_finalizacao_banco' para refletir a correção na função finalizar_ocorrencia
-                        if ocorr.get("data_finalizacao_manual") and ocorr.get("hora_finalizacao_banco"):
+                        if ocorr.get("data_finalizacao_manual") and ocorr.get("hora_finalizacao_manual"): # Mantido 'hora_finalizacao_manual'
                             finalizacao_dt = criar_datetime_manual(
-                                ocorr["data_finalizacao_manual"], ocorr["hora_finalizacao_banco"]
+                                ocorr["data_finalizacao_manual"], ocorr["hora_finalizacao_manual"]
                             )
                             if finalizacao_dt:
                                 data_finalizacao_manual = finalizacao_dt.strftime("%d-%m-%Y")
@@ -2144,7 +2154,7 @@ if st.session_state.get("login", False):
                                                 
                                                 if delete_response.data:
                                                     st.success("✅ Usuário excluído com sucesso!")
-                                                    tm.sleep(1.5)
+                                                    tm.sleep(1)
                                                     st.rerun()
                                                 else:
                                                     st.error("❌ Erro ao excluir usuário.")
@@ -2168,7 +2178,7 @@ if st.session_state.get("login", False):
         
         Os e-mails são enviados utilizando:
         - **Remetente:** ticket@clicklogtransportes.com.br
-        - **Servidor SMTP:** smtp.gmail.com (ajuste se for Kinghost)
+        - **Servidor SMTP:** smtp.kinghost.net
         
         Os destinatários são obtidos do cadastro de clientes:
         - **E-mail principal:** Campo `enviar_para_email`
@@ -2394,13 +2404,16 @@ if st.session_state.get("login", False):
                             nova_nome_cid = st.text_input("Editar Nome:", value=cid_sel)
                             if st.form_submit_button("Salvar Alterações"):
                                 id_alvo = dict_cid[cid_sel]
-                                suc, msg = atualizar_cidade(id_alvo, nova_nome_cid)
-                                if suc:
-                                    st.success(msg)
-                                    carregar_cidades_supabase.clear()
-                                    tm.sleep(1)
-                                    st.rerun()
-                                else: st.error(msg)
+                                try:
+                                    suc, msg = atualizar_cidade(id_alvo, nova_nome_cid)
+                                    if suc:
+                                        st.success(msg)
+                                        carregar_cidades_supabase.clear()
+                                        tm.sleep(1)
+                                        st.rerun()
+                                    else: st.error(msg)
+                                except Exception as e:
+                                    st.error(f"Erro ao atualizar: {e}")
 
         # =========================================================
         # 3. GERENCIAR CLIENTES
