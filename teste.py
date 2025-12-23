@@ -652,9 +652,11 @@ def enviar_email(destinatario, copia, assunto, corpo, imagem_url=None):
 def processar_envio_automatico():
     """Verifica e envia e-mails para tickets que passaram do tempo limite (Otimizado)."""
     try:
-        # 1. Busca rápida: apenas tickets abertos que ainda não tiveram algum dos e-mails enviados
+        cols_para_alertas = "id, numero_ticket, nota_fiscal, cliente, focal, destinatario, cidade, motorista, tipo_de_ocorrencia, observacoes, responsavel, status, data_abertura_manual, hora_abertura_manual, email_enviado_abertura, email_enviado_90min, imagem_url"
+
+        # 1. Busca tickets abertos que ainda não tiveram algum dos e-mails enviados, agora com todos os detalhes
         response = supabase.table("ocorrencias") \
-            .select("id, numero_ticket, cliente, data_abertura_manual, hora_abertura_manual, email_enviado_abertura, email_enviado_90min") \
+            .select(cols_para_alertas) \
             .eq("status", "Aberta") \
             .or_("email_enviado_abertura.eq.false,email_enviado_90min.eq.false") \
             .execute()
@@ -930,12 +932,12 @@ def verificar_e_enviar_email_abertura(ocorrencia):
                 </p>
 
                 <table>
-                    <tr><th>Ticket</th><td>{ocorrencia.get('numero_ticket', '-')}</td></tr>
-                    <tr><th>Nota Fiscal</th><td>{ocorrencia.get('nota_fiscal', '-')}</td></tr>
-                    <tr><th>Destinatário</th><td>{ocorrencia.get('destinatario', '-')}</td></tr>
-                    <tr><th>Cidade</th><td>{ocorrencia.get('cidade', '-')}</td></tr>
-                    <tr><th>Motorista</th><td>{ocorrencia.get('motorista', '-')}</td></tr>
-                    <tr><th>Tipo de Ocorrência</th><td>{ocorrencia.get('tipo_de_ocorrencia', '-')}</td></tr>
+                    <tr><th>Ticket</th><td>{(ocorrencia.get('numero_ticket') or '-')}</td></tr>
+                    <tr><th>Nota Fiscal</th><td>{(ocorrencia.get('nota_fiscal') or '-')}</td></tr>
+                    <tr><th>Destinatário</th><td>{(ocorrencia.get('destinatario') or '-')}</td></tr>
+                    <tr><th>Cidade</th><td>{(ocorrencia.get('cidade') or '-')}</td></tr>
+                    <tr><th>Motorista</th><td>{(ocorrencia.get('motorista') or '-')}</td></tr>
+                    <tr><th>Tipo de Ocorrência</th><td>{(ocorrencia.get('tipo_de_ocorrencia') or '-')}</td></tr>
                     <tr><th>Data/Hora de Abertura</th><td>{data_hora_str}</td></tr>
                     {imagem_html}
                 </table>
