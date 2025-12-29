@@ -559,11 +559,13 @@ def finalizar_ocorrencia(ocorr, complemento, data_finalizacao_manual, hora_final
             }).eq("id", ocorr["id"]).execute()
             
             if response and response.data:
-                # 📧 Enviar e-mail de finalização (passa a ocorrência atualizada)
+                # �� PAUSANDO - Enviar e-mail de finalização (passa a ocorrência atualizada)
                 ocorr_atualizada = response.data[0]
-                enviar_email_finalizacao(ocorr_atualizada) # Chama a função que já registra no emails_enviados
+                # enviar_email_finalizacao(ocorr_atualizada) # Linha comentada para pausar o envio de e-mail de finalização
                 
                 return True, "Ocorrência finalizada com sucesso!"
+
+
             else:
                 return False, "Erro ao salvar a finalização no banco de dados."
 
@@ -1662,22 +1664,24 @@ if st.session_state.get("login", False):
 
                     if response and response.data:
                         
-                        # === INÍCIO DO DISPARO RETROATIVO ===
-                        # Se você está criando a ocorrência com data/hora manual no passado,
-                        # é importante que as funções de notificação sejam chamadas AQUI,
-                        # pois elas já farão a verificação de tempo e o envio, se for o caso.
-                        try:
-                            print("💾 Ticket salvo. Verificando e-mails retroativos...")
+                        # === PAUSANDO - INÍCIO DO DISPARO RETROATIVO ===
+                        # Temporariamente desativado enquanto o provedor de e-mails não é resolvido.
+                        # As verificações de e-mail (30min e 90min) para novas ocorrências não serão feitas.
+                        # try:
+                        #     print("💾 Ticket salvo. Verificando e-mails retroativos...")
                             
-                            # 1. Verifica regra de 30 min (Se criado há 2h, vai disparar)
-                            verificar_e_enviar_email_abertura(nova_ocorrencia) # Passa o dicionário
+                        #     # 1. Verifica regra de 30 min (Se criado há 2h, vai disparar)
+                        #     verificar_e_enviar_email_abertura(nova_ocorrencia) 
                             
-                            # 2. Verifica regra de 90 min (Se criado há 2h, vai disparar TAMBÉM)
-                            verificar_e_enviar_email_90min(nova_ocorrencia) # Passa o dicionário
+                        #     # 2. Verifica regra de 90 min (Se criado há 2h, vai disparar TAMBÉM)
+                        #     verificar_e_enviar_email_90min(nova_ocorrencia) 
                             
-                        except Exception as e:
-                            print(f"❌ Erro crítico no disparo imediato: {e}")
+                        # except Exception as e:
+                        #     print(f"❌ Erro crítico no disparo imediato: {e}")
                         # === FIM DO DISPARO RETROATIVO ===
+
+
+
 
                         nova_ocorrencia_local = nova_ocorrencia.copy()
                         nova_ocorrencia_local["Data/Hora Finalização"] = ""
@@ -1707,53 +1711,56 @@ if st.session_state.get("login", False):
     #     ABA 2 - EM ABERTO (COM CONTAGEM DINÂMICA)
     # =========================
     if st.session_state.aba_ativa == "aba2":
-        # ⏱️ Reintroduzindo o st_autorefresh para acionar a verificação a cada 7 minutos
-        counter = st_autorefresh(interval=7 * 60 * 1000, key="email_check_counter")
+        # ⏱️ PAUSANDO - A verificação e envio automático de e-mails está desativada temporariamente.
+        # Comentei as linhas abaixo para pausar o autorefresh e a verificação automática de e-mails
+        # counter = st_autorefresh(interval=7 * 60 * 1000, key="email_check_counter")
 
-        if counter > 0:
-            # Roda o processamento pesado de forma silenciosa
-            processar_envio_automatico()
+        # if counter > 0:
+        #     # Roda o processamento pesado de forma silenciosa
+        #     processar_envio_automatico()
         
-        # --- Bloco de verificação de e-mails, agora acionado pelo autorefresh ---
-        agora = datetime.now()
-        # Inicializa 'ultima_verificacao_email' se não existir na session_state
-        if "ultima_verificacao_email" not in st.session_state:
-            # Garante que rode na 1ª carga ou 1 min após o primeiro ciclo para pegar atrasados
-            st.session_state.ultima_verificacao_email = agora - timedelta(minutes=8) # Set a value older than 7 minutes to ensure it runs on the first auto-refresh after being active.
+        # --- PAUSANDO - Bloco de verificação de e-mails, agora acionado pelo autorefresh ---
+        # Comentei todo este bloco para pausar a verificação periódica de e-mails
+        # agora = datetime.now()
+        # # Inicializa 'ultima_verificacao_email' se não existir na session_state
+        # if "ultima_verificacao_email" not in st.session_state:
+        #     # Garante que rode na 1ª carga ou 1 min após o primeiro ciclo para pegar atrasados
+        #     st.session_state.ultima_verificacao_email = agora - timedelta(minutes=8) 
 
-        # Verifique se já passou tempo suficiente desde a última verificação
-        # A verificação deve ocorrer a cada 7 minutos para corresponder ao autorefresh
-        if agora - st.session_state.ultima_verificacao_email >= timedelta(minutes=7): 
-            print("📢 Executando verificação e envio de e-mails periódicos (a cada 7 min)...")
+        # # Verifique se já passou tempo suficiente desde a última verificação
+        # # A verificação deve ocorrer a cada 7 minutos para corresponder ao autorefresh
+        # if agora - st.session_state.ultima_verificacao_email >= timedelta(minutes=7): 
+        #     print("📢 Executando verificação e envio de e-mails periódicos (a cada 7 min)...")
             
-            # --- SPINNER PARA INDICAR PROCESSAMENTO ---
-            # ATENÇÃO: Este spinner indica que a tela estará bloqueada durante a execução desta parte.
-            with st.spinner("📧 Verificando tickets e enviando e-mails de alerta... A tela pode pausar por alguns instantes."):
-                try:
-                    # Clear cache for occurrence loading to ensure we get the latest flags
-                    carregar_ocorrencias_abertas.clear() 
+        #     # --- SPINNER PARA INDICAR PROCESSAMENTO ---
+        #     # ATENÇÃO: Este spinner indica que a tela estará bloqueada durante a execução desta parte.
+        #     with st.spinner("📧 Verificando tickets e enviando e-mails de alerta... A tela pode pausar por alguns instantes."):
+        #         try:
+        #             # Clear cache for occurrence loading to ensure we get the latest flags
+        #             carregar_ocorrencias_abertas.clear() 
                     
-                    resultados_notificacao = notificar_ocorrencias_abertas()
+        #             resultados_notificacao = notificar_ocorrencias_abertas() 
                     
-                    # Feedback visual (toast) para o usuário
-                    total_enviados = sum(1 for res in resultados_notificacao if res["status"] == "sucesso")
-                    total_erros = sum(1 for res in resultados_notificacao if res["status"] == "erro")
+        #             # Feedback visual (toast) para o usuário
+        #             total_enviados = sum(1 for res in resultados_notificacao if res["status"] == "sucesso")
+        #             total_erros = sum(1 for res in resultados_notificacao if res["status"] == "erro")
                     
-                    if total_enviados > 0:
-                        st.toast(f"✅ {total_enviados} e-mail(s) de alerta enviados.")
-                    if total_erros > 0:
-                        st.toast(f"❌ {total_erros} e-mail(s) de alerta falharam. Verifique a Aba 'Notificações por E-mail'.")
-                    if total_enviados == 0 and total_erros == 0:
-                        st.toast("ℹ️ Nenhuma notificação de e-mail pendente encontrada ou enviada neste ciclo.")
+        #             if total_enviados > 0:
+        #                 st.toast(f"✅ {total_enviados} e-mail(s) de alerta enviados.")
+        #             if total_erros > 0:
+        #                 st.toast(f"❌ {total_erros} e-mail(s) de alerta falharam. Verifique a Aba 'Notificações por E-mail'.")
+        #             if total_enviados == 0 and total_erros == 0:
+        #                 st.toast("ℹ️ Nenhuma notificação de e-mail pendente encontrada ou enviada neste ciclo.")
+        #             st.session_state.ultima_verificacao_email = agora 
                     
-                    st.session_state.ultima_verificacao_email = agora # Atualiza o timestamp da última verificação
-                    
-                    # After sending, force a rerun so that the cards (email flags) are updated
-                    # and the spinner is removed, showing the updated state.
-                    st.rerun() 
-                except Exception as e:
-                    st.error(f"❌ Erro ao executar notificação periódica: {e}")
-            # --- FIM DO SPINNER ---
+        #             st.rerun() 
+        #         except Exception as e:
+        #             st.error(f"❌ Erro ao executar notificação periódica: {e}")
+        #     # --- FIM DO SPINNER ---
+
+
+
+
         
         # 1. Definimos o Layout do Cabeçalho
         col_titulo, col_botao_atualizar = st.columns([5, 1]) 
