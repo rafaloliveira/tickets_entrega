@@ -39,19 +39,19 @@ load_dotenv()
 # 1. CONFIGURAÇÕES GLOBAIS E CHAVES (EMAIL, SUPABASE, FUSO HORÁRIO)
 # ====================================================================
 
-# --- CONFIGURAÇÕES DE E-MAIL DO MAILJET ---
-# O e-mail do remetente (FROM) DEVE ser verificado no Mailjet
-EMAIL_REMETENTE = "ticket@clicklogtransportes.com.br" 
+# --- CONFIGURAÇÕES DE E-MAIL (AGORA COM RESEND) ---
+# O e-mail do remetente (FROM) DEVE ser verificado no Resend (e o domínio também)
+EMAIL_REMETENTE = "ticket@clicklogtransportes.com.br" # Certifique-se que este e-mail está VERIFICADO no Resend!
 
-# Credenciais do Mailjet, carregadas dos secrets do Streamlit Cloud
-# A API Key Pública do Mailjet é o SMTP_USERNAME
-# A API Secret Key do Mailjet é o SMTP_PASSWORD
-SMTP_USERNAME = "4e56fc4aaecd24a091a4f9c9009000cf" 
-SMTP_PASSWORD = "fd1ca66075fdef9915c54fe076f00fda"
+# Credenciais do Resend
+# SMTP_USERNAME para Resend é sempre "resend"
+SMTP_USERNAME = "resend" 
+# SMTP_PASSWORD para Resend é sua API Key
+SMTP_PASSWORD = "re_HE7DessE_LJaSvUvwiY17hjXC2nq8xvo8" # <--- SUA CHAVE API DO RESEND AQUI
 
-# Servidor SMTP do Mailjet
-SMTP_HOST = "in-v3.mailjet.com" # Host SMTP para envio do Mailjet
-SMTP_PORT = 587 # Porta padrão para TLS
+# Servidor SMTP do Resend
+SMTP_HOST = "smtp.resend.com" # Host SMTP para envio do Resend
+SMTP_PORT = 587 # Porta padrão para TLS (geralmente 587)
 
 socket.setdefaulttimeout(30) # Mantido, útil para qualquer conexão socket
 
@@ -559,13 +559,11 @@ def finalizar_ocorrencia(ocorr, complemento, data_finalizacao_manual, hora_final
             }).eq("id", ocorr["id"]).execute()
             
             if response and response.data:
-                # �� PAUSANDO - Enviar e-mail de finalização (passa a ocorrência atualizada)
+                # 📧 Enviar e-mail de finalização (passa a ocorrência atualizada)
                 ocorr_atualizada = response.data[0]
-                # enviar_email_finalizacao(ocorr_atualizada) # Linha comentada para pausar o envio de e-mail de finalização
+                enviar_email_finalizacao(ocorr_atualizada) # Chama a função que já registra no emails_enviados
                 
                 return True, "Ocorrência finalizada com sucesso!"
-
-
             else:
                 return False, "Erro ao salvar a finalização no banco de dados."
 
@@ -583,7 +581,7 @@ def finalizar_ocorrencia(ocorr, complemento, data_finalizacao_manual, hora_final
 
 # Copie esta função INTEIRA e cole no seu script, substituindo a versão antiga de enviar_email
 def enviar_email(destinatario, copia, assunto, corpo, imagem_url=None):
-    """Envia e-mail com corpo HTML e anexo de imagem (se fornecido) via Mailjet SMTP."""
+    """Envia e-mail com corpo HTML e anexo de imagem (se fornecido) via Resend SMTP."""
     
     # --- FUNÇÃO AUXILIAR PARA LIMPAR E-MAILS ---
     def processar_lista_emails(texto):
@@ -594,7 +592,7 @@ def enviar_email(destinatario, copia, assunto, corpo, imagem_url=None):
 
     try:
         if not SMTP_USERNAME or not SMTP_PASSWORD:
-            return False, "Erro: Credenciais SMTP do Mailjet (MAILJET_SMTP_USERNAME ou MAILJET_SMTP_PASSWORD) não configuradas no Streamlit Secrets ou variáveis de ambiente."
+            return False, "Erro: Credenciais SMTP do Resend (Resend_SMTP_USERNAME ou Resend_SMTP_PASSWORD) não configuradas no Streamlit Secrets ou variáveis de ambiente."
 
         lista_destinatarios = processar_lista_emails(destinatario)
         lista_copia = processar_lista_emails(copia)
@@ -627,26 +625,26 @@ def enviar_email(destinatario, copia, assunto, corpo, imagem_url=None):
                     image_mime.add_header('Content-Disposition', 'attachment', filename="imagem_ocorrencia.jpg")
                     msg.attach(image_mime)
             except Exception as e:
-                print(f"⚠️ Mailjet SMTP: Erro ao processar imagem para anexo: {e}")
+                print(f"⚠️ Resend SMTP: Erro ao processar imagem para anexo: {e}")
                 # Silencia erro de imagem para garantir que o texto chegue
 
         # Enviar via SMTP
         server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15)
         server.starttls() # Iniciar conexão segura
-        server.login(SMTP_USERNAME, SMTP_PASSWORD) # Usar as credenciais do Mailjet
+        server.login(SMTP_USERNAME, SMTP_PASSWORD) # Usar as credenciais do Resend
         
         server.sendmail(EMAIL_REMETENTE, todos_destinatarios, msg.as_string())
         
         server.quit()
 
-        return True, "E-mail enviado com sucesso via Mailjet"
+        return True, "E-mail enviado com sucesso via Resend"
 
     except smtplib.SMTPAuthenticationError:
-        return False, "Falha na autenticação SMTP com Mailjet. Verifique seu SMTP_USERNAME e SMTP_PASSWORD."
+        return False, "Falha na autenticação SMTP com Resend. Verifique seu SMTP_USERNAME e SMTP_PASSWORD."
     except smtplib.SMTPException as e:
-        return False, f"Erro SMTP com Mailjet: {e}"
+        return False, f"Erro SMTP com Resend: {e}"
     except Exception as e:
-        return False, f"Erro inesperado ao enviar e-mail via Mailjet: {str(e)}"
+        return False, f"Erro inesperado ao enviar e-mail via Resend: {str(e)}"
 #--------------------------------------------------------------------------------------------
 
 # --- COLOQUE ESTE BLOCO APÓS AS FUNÇÕES DE E-MAIL ---
@@ -1031,7 +1029,7 @@ def verificar_e_enviar_email_90min(ocorrencia):
             destinatario = dados_emails["principal"]
             copia = dados_emails["copia"]
             
-            assunto = f"URGENTE: Alerta de Permanência – Ocorrência em Aberto - Ticket {ocorrencia.get('numero_ticket')}"
+            assunto = f"Alerta de Permanência – Ocorrência em Aberto - Ticket {ocorrencia.get('numero_ticket')}"
             
             # --- INÍCIO DA ALTERAÇÃO ---
             # Formata a data de abertura para exibição no e-mail
@@ -1664,24 +1662,22 @@ if st.session_state.get("login", False):
 
                     if response and response.data:
                         
-                        # === PAUSANDO - INÍCIO DO DISPARO RETROATIVO ===
-                        # Temporariamente desativado enquanto o provedor de e-mails não é resolvido.
-                        # As verificações de e-mail (30min e 90min) para novas ocorrências não serão feitas.
-                        # try:
-                        #     print("💾 Ticket salvo. Verificando e-mails retroativos...")
+                        # === INÍCIO DO DISPARO RETROATIVO ===
+                        # Se você está criando a ocorrência com data/hora manual no passado,
+                        # é importante que as funções de notificação sejam chamadas AQUI,
+                        # pois elas já farão a verificação de tempo e o envio, se for o caso.
+                        try:
+                            print("💾 Ticket salvo. Verificando e-mails retroativos...")
                             
-                        #     # 1. Verifica regra de 30 min (Se criado há 2h, vai disparar)
-                        #     verificar_e_enviar_email_abertura(nova_ocorrencia) 
+                            # 1. Verifica regra de 30 min (Se criado há 2h, vai disparar)
+                            verificar_e_enviar_email_abertura(nova_ocorrencia) # Passa o dicionário
                             
-                        #     # 2. Verifica regra de 90 min (Se criado há 2h, vai disparar TAMBÉM)
-                        #     verificar_e_enviar_email_90min(nova_ocorrencia) 
+                            # 2. Verifica regra de 90 min (Se criado há 2h, vai disparar TAMBÉM)
+                            verificar_e_enviar_email_90min(nova_ocorrencia) # Passa o dicionário
                             
-                        # except Exception as e:
-                        #     print(f"❌ Erro crítico no disparo imediato: {e}")
+                        except Exception as e:
+                            print(f"❌ Erro crítico no disparo imediato: {e}")
                         # === FIM DO DISPARO RETROATIVO ===
-
-
-
 
                         nova_ocorrencia_local = nova_ocorrencia.copy()
                         nova_ocorrencia_local["Data/Hora Finalização"] = ""
@@ -1711,56 +1707,53 @@ if st.session_state.get("login", False):
     #     ABA 2 - EM ABERTO (COM CONTAGEM DINÂMICA)
     # =========================
     if st.session_state.aba_ativa == "aba2":
-        # ⏱️ PAUSANDO - A verificação e envio automático de e-mails está desativada temporariamente.
-        # Comentei as linhas abaixo para pausar o autorefresh e a verificação automática de e-mails
-        # counter = st_autorefresh(interval=7 * 60 * 1000, key="email_check_counter")
+        # ⏱️ Reintroduzindo o st_autorefresh para acionar a verificação a cada 7 minutos
+        counter = st_autorefresh(interval=7 * 60 * 1000, key="email_check_counter")
 
-        # if counter > 0:
-        #     # Roda o processamento pesado de forma silenciosa
-        #     processar_envio_automatico()
+        if counter > 0:
+            # Roda o processamento pesado de forma silenciosa
+            processar_envio_automatico()
         
-        # --- PAUSANDO - Bloco de verificação de e-mails, agora acionado pelo autorefresh ---
-        # Comentei todo este bloco para pausar a verificação periódica de e-mails
-        # agora = datetime.now()
-        # # Inicializa 'ultima_verificacao_email' se não existir na session_state
-        # if "ultima_verificacao_email" not in st.session_state:
-        #     # Garante que rode na 1ª carga ou 1 min após o primeiro ciclo para pegar atrasados
-        #     st.session_state.ultima_verificacao_email = agora - timedelta(minutes=8) 
+        # --- Bloco de verificação de e-mails, agora acionado pelo autorefresh ---
+        agora = datetime.now()
+        # Inicializa 'ultima_verificacao_email' se não existir na session_state
+        if "ultima_verificacao_email" not in st.session_state:
+            # Garante que rode na 1ª carga ou 1 min após o primeiro ciclo para pegar atrasados
+            st.session_state.ultima_verificacao_email = agora - timedelta(minutes=8) # Set a value older than 7 minutes to ensure it runs on the first auto-refresh after being active.
 
-        # # Verifique se já passou tempo suficiente desde a última verificação
-        # # A verificação deve ocorrer a cada 7 minutos para corresponder ao autorefresh
-        # if agora - st.session_state.ultima_verificacao_email >= timedelta(minutes=7): 
-        #     print("📢 Executando verificação e envio de e-mails periódicos (a cada 7 min)...")
+        # Verifique se já passou tempo suficiente desde a última verificação
+        # A verificação deve ocorrer a cada 7 minutos para corresponder ao autorefresh
+        if agora - st.session_state.ultima_verificacao_email >= timedelta(minutes=7): 
+            print("📢 Executando verificação e envio de e-mails periódicos (a cada 7 min)...")
             
-        #     # --- SPINNER PARA INDICAR PROCESSAMENTO ---
-        #     # ATENÇÃO: Este spinner indica que a tela estará bloqueada durante a execução desta parte.
-        #     with st.spinner("📧 Verificando tickets e enviando e-mails de alerta... A tela pode pausar por alguns instantes."):
-        #         try:
-        #             # Clear cache for occurrence loading to ensure we get the latest flags
-        #             carregar_ocorrencias_abertas.clear() 
+            # --- SPINNER PARA INDICAR PROCESSAMENTO ---
+            # ATENÇÃO: Este spinner indica que a tela estará bloqueada durante a execução desta parte.
+            with st.spinner("📧 Verificando tickets e enviando e-mails de alerta... A tela pode pausar por alguns instantes."):
+                try:
+                    # Clear cache for occurrence loading to ensure we get the latest flags
+                    carregar_ocorrencias_abertas.clear() 
                     
-        #             resultados_notificacao = notificar_ocorrencias_abertas() 
+                    resultados_notificacao = notificar_ocorrencias_abertas()
                     
-        #             # Feedback visual (toast) para o usuário
-        #             total_enviados = sum(1 for res in resultados_notificacao if res["status"] == "sucesso")
-        #             total_erros = sum(1 for res in resultados_notificacao if res["status"] == "erro")
+                    # Feedback visual (toast) para o usuário
+                    total_enviados = sum(1 for res in resultados_notificacao if res["status"] == "sucesso")
+                    total_erros = sum(1 for res in resultados_notificacao if res["status"] == "erro")
                     
-        #             if total_enviados > 0:
-        #                 st.toast(f"✅ {total_enviados} e-mail(s) de alerta enviados.")
-        #             if total_erros > 0:
-        #                 st.toast(f"❌ {total_erros} e-mail(s) de alerta falharam. Verifique a Aba 'Notificações por E-mail'.")
-        #             if total_enviados == 0 and total_erros == 0:
-        #                 st.toast("ℹ️ Nenhuma notificação de e-mail pendente encontrada ou enviada neste ciclo.")
-        #             st.session_state.ultima_verificacao_email = agora 
+                    if total_enviados > 0:
+                        st.toast(f"✅ {total_enviados} e-mail(s) de alerta enviados.")
+                    if total_erros > 0:
+                        st.toast(f"❌ {total_erros} e-mail(s) de alerta falharam. Verifique a Aba 'Notificações por E-mail'.")
+                    if total_enviados == 0 and total_erros == 0:
+                        st.toast("ℹ️ Nenhuma notificação de e-mail pendente encontrada ou enviada neste ciclo.")
                     
-        #             st.rerun() 
-        #         except Exception as e:
-        #             st.error(f"❌ Erro ao executar notificação periódica: {e}")
-        #     # --- FIM DO SPINNER ---
-
-
-
-
+                    st.session_state.ultima_verificacao_email = agora # Atualiza o timestamp da última verificação
+                    
+                    # After sending, force a rerun so that the cards (email flags) are updated
+                    # and the spinner is removed, showing the updated state.
+                    st.rerun() 
+                except Exception as e:
+                    st.error(f"❌ Erro ao executar notificação periódica: {e}")
+            # --- FIM DO SPINNER ---
         
         # 1. Definimos o Layout do Cabeçalho
         col_titulo, col_botao_atualizar = st.columns([5, 1]) 
