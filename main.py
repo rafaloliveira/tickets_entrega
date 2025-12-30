@@ -41,7 +41,7 @@ load_dotenv()
 
 # --- CONFIGURAÇÕES DE E-MAIL (AGORA COM RESEND) ---
 # O e-mail do remetente (FROM) DEVE ser verificado no Resend (e o domínio também)
-EMAIL_REMETENTE = "ticket@clicklogtransportes.com.br" # Certifique-se que este e-mail está VERIFICADO no Resend!
+EMAIL_REMETENTE = "ClickLog Transportes <ticket@clicklogtransportes.com.br>"
 
 # Credenciais do Resend
 # SMTP_USERNAME para Resend é sempre "resend"
