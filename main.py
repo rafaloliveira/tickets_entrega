@@ -611,7 +611,7 @@ def enviar_email(destinatario, copia, assunto, corpo, imagem_url=None):
             msg['Cc'] = ', '.join(lista_copia)
 
         msg['Subject'] = assunto
-        msg['Reply-To'] = "naoresponda@clicklog.com.br" 
+       
 
         msg.attach(MIMEText(corpo, 'html', 'utf-8')) # Adicionei utf-8 para garantir caracteres especiais
 
