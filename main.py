@@ -41,7 +41,7 @@ load_dotenv()
 
 # --- CONFIGURAÇÕES DE E-MAIL (AGORA COM RESEND) ---
 # O e-mail do remetente (FROM) DEVE ser verificado no Resend (e o domínio também)
-EMAIL_REMETENTE = "ClickLog Transportes <ticket@clicklogtransportes.com.br>"
+EMAIL_REMETENTE = "ticket@clicklogtransportes.com.br" # Certifique-se que este e-mail está VERIFICADO no Resend!
 
 # Credenciais do Resend
 # SMTP_USERNAME para Resend é sempre "resend"
@@ -611,7 +611,7 @@ def enviar_email(destinatario, copia, assunto, corpo, imagem_url=None):
             msg['Cc'] = ', '.join(lista_copia)
 
         msg['Subject'] = assunto
-       
+        msg['Reply-To'] = "naoresponda@clicklog.com.br" 
 
         msg.attach(MIMEText(corpo, 'html', 'utf-8')) # Adicionei utf-8 para garantir caracteres especiais
 
@@ -650,34 +650,60 @@ def enviar_email(destinatario, copia, assunto, corpo, imagem_url=None):
 # --- COLOQUE ESTE BLOCO APÓS AS FUNÇÕES DE E-MAIL ---
 
 def processar_envio_automatico():
-    """Verifica e envia e-mails para tickets que passaram do tempo limite (Otimizado)."""
+    """Verifica e envia e-mails para tickets que passaram do tempo limite (Otimizado e Seguro)."""
     try:
+        print("🔄 Iniciando processamento automático de e-mails...")
+        
+        # Buscar apenas tickets que realmente precisam de verificação
         cols_para_alertas = "id, numero_ticket, nota_fiscal, cliente, focal, destinatario, cidade, motorista, tipo_de_ocorrencia, observacoes, responsavel, status, data_abertura_manual, hora_abertura_manual, email_enviado_abertura, email_enviado_90min, imagem_url"
 
-        # 1. Busca tickets abertos que ainda não tiveram algum dos e-mails enviados, agora com todos os detalhes
         response = supabase.table("ocorrencias") \
             .select(cols_para_alertas) \
             .eq("status", "Aberta") \
-            .or_("email_enviado_abertura.eq.false,email_enviado_90min.eq.false") \
+            .or_("email_enviado_abertura.eq.false,email_enviado_90min.eq.false,email_enviado_abertura.is.null,email_enviado_90min.is.null") \
             .execute()
         
         tickets_pendentes = response.data
         if not tickets_pendentes:
+            print("ℹ️ Nenhum ticket pendente para verificação de e-mail.")
             return
 
+        print(f"📋 Encontrados {len(tickets_pendentes)} tickets para verificação.")
+        
+        emails_enviados_30min = 0
+        emails_enviados_90min = 0
+        
         for ocorr in tickets_pendentes:
-            # 2. Chama a sua função real de verificação e envio de abertura (30 min)
+            ticket_num = ocorr.get('numero_ticket', 'N/A')
+            
+            # Verificação e envio de e-mail de 30min
             if not ocorr.get("email_enviado_abertura"):
-                # Esta função já checa o tempo e envia o e-mail se necessário
-                verificar_e_enviar_email_abertura(ocorr) 
+                try:
+                    sucesso, mensagem = verificar_e_enviar_email_abertura(ocorr)
+                    if sucesso:
+                        emails_enviados_30min += 1
+                        print(f"✅ E-mail 30min enviado para ticket {ticket_num}")
+                    elif "já enviado" not in mensagem and "finalizada" not in mensagem:
+                        print(f"⚠️ Ticket {ticket_num}: {mensagem}")
+                except Exception as e:
+                    print(f"❌ Erro ao processar e-mail 30min para ticket {ticket_num}: {e}")
 
-            # 3. Chama a sua função real de verificação e envio de 90 min
+            # Verificação e envio de e-mail de 90min
             if not ocorr.get("email_enviado_90min"):
-                # Certifique-se de que esta função existe no seu código (baseado no snippet 27)
-                verificar_e_enviar_email_90min(ocorr)
+                try:
+                    sucesso, mensagem = verificar_e_enviar_email_90min(ocorr)
+                    if sucesso:
+                        emails_enviados_90min += 1
+                        print(f"✅ E-mail 90min enviado para ticket {ticket_num}")
+                    elif "já enviado" not in mensagem and "finalizada" not in mensagem:
+                        print(f"⚠️ Ticket {ticket_num}: {mensagem}")
+                except Exception as e:
+                    print(f"❌ Erro ao processar e-mail 90min para ticket {ticket_num}: {e}")
+
+        print(f"📊 Processamento concluído: {emails_enviados_30min} e-mails de 30min, {emails_enviados_90min} e-mails de 90min enviados.")
 
     except Exception as e:
-        print(f"⚠️ Erro no processamento automático: {e}")
+        print(f"⚠️ Erro crítico no processamento automático: {e}")
 
 #---------------------------------------------------------------------------------------------
 def carregar_dados_clientes_email():
@@ -844,17 +870,31 @@ def verificar_e_enviar_email_abertura(ocorrencia):
     Verifica se passou do tempo limite (ex: 30 min) e envia e-mail de abertura.
     Retorna (sucesso, mensagem)
     """
+    # 1. PRIMEIRA VERIFICAÇÃO: Se já foi enviado, não processar
+    if ocorrencia.get("email_enviado_abertura") is True:
+        return False, "E-mail de abertura já enviado."
+    
+    # 2. SEGUNDA VERIFICAÇÃO: Se está finalizado, não processar
+    if ocorrencia.get("status") == "Finalizada":
+        return False, "Ocorrência já finalizada."
+    
+    # 3. TERCEIRA VERIFICAÇÃO: Buscar dados atualizados do banco para confirmar
+    try:
+        response = supabase.table("ocorrencias").select("email_enviado_abertura, status").eq("id", ocorrencia["id"]).execute()
+        if response.data:
+            dados_atuais = response.data[0]
+            if dados_atuais.get("email_enviado_abertura") is True:
+                return False, "E-mail de abertura já enviado (confirmado no banco)."
+            if dados_atuais.get("status") == "Finalizada":
+                return False, "Ocorrência já finalizada (confirmado no banco)."
+    except Exception as e:
+        print(f"Erro ao verificar status atual: {e}")
+    
     agora = obter_data_hora_atual_brasil()
     tempo_limite_min = carregar_tempo_envio_email()  # Padrão 30 min
 
-    # 1. Ignorar se já foi enviado ou finalizado
-    if ocorrencia.get("email_enviado_abertura") is True:
-        return False, "E-mail de abertura já enviado."
-    if ocorrencia.get("status") == "Finalizada":
-        return False, "Ocorrência já finalizada."
-
     try:
-        # 2. Calcular tempo decorrido
+        # 4. Calcular tempo decorrido
         data_str = ocorrencia.get("data_abertura_manual") # YYYY-MM-DD
         hora_str = ocorrencia.get("hora_abertura_manual") # HH:MM:SS
         
@@ -869,7 +909,7 @@ def verificar_e_enviar_email_abertura(ocorrencia):
         diferenca = agora - dt_abertura
         diferenca_minutos = diferenca.total_seconds() / 60
 
-        # 3. Verificar regra (Ex: >= 30 min)
+        # 5. Verificar regra (Ex: >= 30 min)
         if diferenca_minutos >= tempo_limite_min:
             print(f"📧 Disparando 1º E-mail ({tempo_limite_min}min) para Ticket {ocorrencia.get('numero_ticket')} (Atraso: {int(diferenca_minutos)} min)")
             
@@ -886,13 +926,13 @@ def verificar_e_enviar_email_abertura(ocorrencia):
             assunto = f"ClickLog Transportes - Ocorrência em Aberto - Ticket {ocorrencia.get('numero_ticket')}"
             
             data_hora_str = f"{ocorrencia['data_abertura_manual']} {ocorrencia['hora_abertura_manual']}"
-            imagem_url_abertura = ocorrencia.get("imagem_url", "") # Obter a URL da imagem de abertura
+            imagem_url_abertura = ocorrencia.get("imagem_url", "")
             imagem_html = ""
             if imagem_url_abertura:
                 imagem_html = f"""
                 <tr>
                     <th>Imagem da Ocorrência</th>
-                    <td><a href="{imagem_url_abertura}" target="_blank" style="color:#007bff;text-decoration:none;">Visualizar Imagem</a></td>
+                    <td><a href="{imagem_url_abertura}"  style="color:#007bff;text-decoration:none;">Visualizar Imagem</a></td>
                 </tr>
                 """
 
@@ -958,24 +998,44 @@ def verificar_e_enviar_email_abertura(ocorrencia):
             </body>
             </html>
             """
+            
+            # 6. VERIFICAÇÃO FINAL ANTES DO ENVIO
+            try:
+                verificacao_final = supabase.table("ocorrencias").select("email_enviado_abertura, status").eq("id", ocorrencia["id"]).execute()
+                if verificacao_final.data:
+                    dados_finais = verificacao_final.data[0]
+                    if dados_finais.get("email_enviado_abertura") is True:
+                        return False, "E-mail já foi enviado por outro processo."
+                    if dados_finais.get("status") == "Finalizada":
+                        return False, "Ocorrência foi finalizada durante o processamento."
+            except Exception as e:
+                print(f"Erro na verificação final: {e}")
+            
             enviou, msg = enviar_email(destinatario, copia, assunto, corpo, ocorrencia.get("imagem_url"))
             
             if enviou:
                 print(f"✅ Sucesso envio {tempo_limite_min}min: {msg}")
-                supabase.table("ocorrencias").update({"email_enviado_abertura": True}).eq("id", ocorrencia["id"]).execute()
-                ocorrencia["email_enviado_abertura"] = True
+                
+                # 7. MARCAR COMO ENVIADO IMEDIATAMENTE
+                try:
+                    supabase.table("ocorrencias").update({"email_enviado_abertura": True}).eq("id", ocorrencia["id"]).execute()
+                    ocorrencia["email_enviado_abertura"] = True
+                except Exception as e:
+                    print(f"Erro ao marcar e-mail como enviado: {e}")
 
-                # --- NOVO: Registrar envio na tabela emails_enviados ---
-                supabase.table("emails_enviados").insert({
-                    "data_hora": obter_data_hora_atual_brasil().isoformat(),
-                    "tipo": f"Alerta {int(tempo_limite_min)}min",
-                    "cliente": nome_cliente,
-                    "email": destinatario, # Ou uma string com todos os destinatários se preferir
-                    "ticket": ocorrencia.get('numero_ticket', '-'),
-                    "nota_fiscal": ocorrencia.get('nota_fiscal', '-'),
-                    "status": "Enviado"
-                }).execute()
-                # --------------------------------------------------------
+                # 8. Registrar envio na tabela emails_enviados
+                try:
+                    supabase.table("emails_enviados").insert({
+                        "data_hora": obter_data_hora_atual_brasil().isoformat(),
+                        "tipo": f"Alerta {int(tempo_limite_min)}min",
+                        "cliente": nome_cliente,
+                        "email": destinatario,
+                        "ticket": ocorrencia.get('numero_ticket', '-'),
+                        "nota_fiscal": ocorrencia.get('nota_fiscal', '-'),
+                        "status": "Enviado"
+                    }).execute()
+                except Exception as e:
+                    print(f"Erro ao registrar histórico de e-mail: {e}")
 
                 return True, f"E-mail de {tempo_limite_min}min enviado com sucesso."
             else:
@@ -987,22 +1047,38 @@ def verificar_e_enviar_email_abertura(ocorrencia):
     except Exception as e:
         print(f"Erro ao processar email abertura para ticket {ocorrencia.get('numero_ticket')}: {e}")
         return False, f"Erro inesperado: {str(e)}"
+    
+        ###############################################################################################
 
 def verificar_e_enviar_email_90min(ocorrencia):
     """
     Verifica se passou de 90 min e envia o segundo alerta.
     Retorna (sucesso, mensagem)
     """
-    agora = obter_data_hora_atual_brasil()
-    
-    # 1. Ignorar se já foi enviado o de 90min ou finalizado
+    # 1. PRIMEIRA VERIFICAÇÃO: Se já foi enviado, não processar
     if ocorrencia.get("email_enviado_90min") is True:
         return False, "E-mail de 90min já enviado."
+    
+    # 2. SEGUNDA VERIFICAÇÃO: Se está finalizado, não processar
     if ocorrencia.get("status") == "Finalizada":
         return False, "Ocorrência já finalizada."
-
+    
+    # 3. TERCEIRA VERIFICAÇÃO: Buscar dados atualizados do banco para confirmar
     try:
-        # 2. Calcular tempo decorrido
+        response = supabase.table("ocorrencias").select("email_enviado_90min, status").eq("id", ocorrencia["id"]).execute()
+        if response.data:
+            dados_atuais = response.data[0]
+            if dados_atuais.get("email_enviado_90min") is True:
+                return False, "E-mail de 90min já enviado (confirmado no banco)."
+            if dados_atuais.get("status") == "Finalizada":
+                return False, "Ocorrência já finalizada (confirmado no banco)."
+    except Exception as e:
+        print(f"Erro ao verificar status atual 90min: {e}")
+    
+    agora = obter_data_hora_atual_brasil()
+    
+    try:
+        # 4. Calcular tempo decorrido
         data_str = ocorrencia.get("data_abertura_manual")
         hora_str = ocorrencia.get("hora_abertura_manual")
         
@@ -1016,7 +1092,7 @@ def verificar_e_enviar_email_90min(ocorrencia):
         diferenca = agora - dt_abertura
         diferenca_minutos = diferenca.total_seconds() / 60
 
-        # 3. Verificar regra (>= 90 min)
+        # 5. Verificar regra (>= 90 min)
         if diferenca_minutos >= 90:
             print(f"📧📧 Disparando 2º E-mail (90min) para Ticket {ocorrencia.get('numero_ticket')} (Atraso: {int(diferenca_minutos)} min)")
             
@@ -1031,7 +1107,6 @@ def verificar_e_enviar_email_90min(ocorrencia):
             
             assunto = f"Alerta de Permanência – Ocorrência em Aberto - Ticket {ocorrencia.get('numero_ticket')}"
             
-            # --- INÍCIO DA ALTERAÇÃO ---
             # Formata a data de abertura para exibição no e-mail
             data_abertura_formatada = f"{ocorrencia.get('data_abertura_manual', '-')} {ocorrencia.get('hora_abertura_manual', '-')}"
             
@@ -1042,7 +1117,7 @@ def verificar_e_enviar_email_90min(ocorrencia):
                 imagem_html = f"""
                 <tr>
                     <th>Imagem da Ocorrência</th>
-                    <td><a href="{imagem_url_abertura}" target="_blank" style="color:#007bff;text-decoration:none;">Visualizar Imagem</a></td>
+                    <td><a href="{imagem_url_abertura}"  style="color:#007bff;text-decoration:none;">Visualizar Imagem</a></td>
                 </tr>
                 """
 
@@ -1117,24 +1192,44 @@ def verificar_e_enviar_email_90min(ocorrencia):
             </body>
             </html>
             """
+            
+            # 6. VERIFICAÇÃO FINAL ANTES DO ENVIO
+            try:
+                verificacao_final = supabase.table("ocorrencias").select("email_enviado_90min, status").eq("id", ocorrencia["id"]).execute()
+                if verificacao_final.data:
+                    dados_finais = verificacao_final.data[0]
+                    if dados_finais.get("email_enviado_90min") is True:
+                        return False, "E-mail 90min já foi enviado por outro processo."
+                    if dados_finais.get("status") == "Finalizada":
+                        return False, "Ocorrência foi finalizada durante o processamento."
+            except Exception as e:
+                print(f"Erro na verificação final 90min: {e}")
+            
             enviou, msg = enviar_email(destinatario, copia, assunto, corpo, ocorrencia.get("imagem_url"))
             
             if enviou:
                 print(f"✅ Sucesso envio 90min: {msg}")
-                supabase.table("ocorrencias").update({"email_enviado_90min": True}).eq("id", ocorrencia["id"]).execute()
-                ocorrencia["email_enviado_90min"] = True
+                
+                # 7. MARCAR COMO ENVIADO IMEDIATAMENTE
+                try:
+                    supabase.table("ocorrencias").update({"email_enviado_90min": True}).eq("id", ocorrencia["id"]).execute()
+                    ocorrencia["email_enviado_90min"] = True
+                except Exception as e:
+                    print(f"Erro ao marcar e-mail 90min como enviado: {e}")
 
-                # --- NOVO: Registrar envio na tabela emails_enviados ---
-                supabase.table("emails_enviados").insert({
-                    "data_hora": obter_data_hora_atual_brasil().isoformat(),
-                    "tipo": "Alerta 90min",
-                    "cliente": nome_cliente,
-                    "email": destinatario, # Ou uma string com todos os destinatários se preferir
-                    "ticket": ocorrencia.get('numero_ticket', '-'),
-                    "nota_fiscal": ocorrencia.get('nota_fiscal', '-'),
-                    "status": "Enviado"
-                }).execute()
-                # --------------------------------------------------------
+                # 8. Registrar envio na tabela emails_enviados
+                try:
+                    supabase.table("emails_enviados").insert({
+                        "data_hora": obter_data_hora_atual_brasil().isoformat(),
+                        "tipo": "Alerta 90min",
+                        "cliente": nome_cliente,
+                        "email": destinatario,
+                        "ticket": ocorrencia.get('numero_ticket', '-'),
+                        "nota_fiscal": ocorrencia.get('nota_fiscal', '-'),
+                        "status": "Enviado"
+                    }).execute()
+                except Exception as e:
+                    print(f"Erro ao registrar histórico de e-mail 90min: {e}")
 
                 return True, "E-mail de 90min enviado com sucesso."
             else:
@@ -1146,6 +1241,8 @@ def verificar_e_enviar_email_90min(ocorrencia):
     except Exception as e:
         print(f"Erro ao processar email 90min para ticket {ocorrencia.get('numero_ticket')}: {e}")
         return False, f"Erro inesperado: {str(e)}"
+    
+        ########################################################################################################
 
 def notificar_ocorrencias_abertas():
     """Notifica clientes sobre ocorrências abertas há mais de 30 minutos e também aquelas com mais de 1h30."""
@@ -1708,7 +1805,7 @@ if st.session_state.get("login", False):
     # =========================
     if st.session_state.aba_ativa == "aba2":
         # ⏱️ Reintroduzindo o st_autorefresh para acionar a verificação a cada 7 minutos
-        counter = st_autorefresh(interval=7 * 60 * 1000, key="email_check_counter")
+        counter = st_autorefresh(interval=10 * 60 * 1000, key="email_check_counter")
 
         if counter > 0:
             # Roda o processamento pesado de forma silenciosa
@@ -1723,7 +1820,7 @@ if st.session_state.get("login", False):
 
         # Verifique se já passou tempo suficiente desde a última verificação
         # A verificação deve ocorrer a cada 7 minutos para corresponder ao autorefresh
-        if agora - st.session_state.ultima_verificacao_email >= timedelta(minutes=7): 
+        if agora - st.session_state.ultima_verificacao_email >= timedelta(minutes=10):
             print("📢 Executando verificação e envio de e-mails periódicos (a cada 7 min)...")
             
             # --- SPINNER PARA INDICAR PROCESSAMENTO ---
