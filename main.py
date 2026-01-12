@@ -580,71 +580,108 @@ def finalizar_ocorrencia(ocorr, complemento, data_finalizacao_manual, hora_final
 # ====================================================================
 
 # Copie esta função INTEIRA e cole no seu script, substituindo a versão antiga de enviar_email
-def enviar_email(destinatario, copia, assunto, corpo, imagem_url=None):
-    """Envia e-mail com corpo HTML e anexo de imagem (se fornecido) via Resend SMTP."""
+# Copie esta função INTEIRA e cole no seu script, substituindo a versão antiga de enviar_email
+def enviar_email_com_backup(destinatario, copia, assunto, corpo, imagem_url=None):
+    """
+    Envia e-mail tentando primeiro o Resend, depois Gmail como backup.
+    Retorna (sucesso, mensagem, provedor_usado)
+    """
     
-    # --- FUNÇÃO AUXILIAR PARA LIMPAR E-MAILS ---
+    # --- CONFIGURAÇÕES DOS PROVEDORES ---
+    provedores = [
+        {
+            "nome": "Resend",
+            "host": "smtp.resend.com",
+            "port": 587,
+            "username": "resend",
+            "password": "re_HE7DessE_LJaSvUvwiY17hjXC2nq8xvo8",  # Sua chave atual
+            "from_email": "ClickLog Transportes <ticket@clicklogtransportes.com.br>"
+        },
+        {
+            "nome": "Gmail",
+            "host": "smtp.gmail.com",
+            "port": 587,
+            "username": "ticketclicklogtransportes@gmail.com",
+            "password": "hqzb srwr eeys ztmx",
+            "from_email": "ClickLog Transportes <ticketclicklogtransportes@gmail.com>"
+        }
+    ]
+    
+    # --- FUNÇÃO AUXILIAR PARA PROCESSAR E-MAILS ---
     def processar_lista_emails(texto):
         if not texto:
             return []
         texto = texto.replace(',', ';')
         return [e.strip() for e in texto.split(';') if e.strip()]
 
-    try:
-        if not SMTP_USERNAME or not SMTP_PASSWORD:
-            return False, "Erro: Credenciais SMTP do Resend (Resend_SMTP_USERNAME ou Resend_SMTP_PASSWORD) não configuradas no Streamlit Secrets ou variáveis de ambiente."
+    # --- TENTA CADA PROVEDOR ---
+    for provedor in provedores:
+        try:
+            print(f"🔄 Tentando enviar via {provedor['nome']}...")
+            
+            lista_destinatarios = processar_lista_emails(destinatario)
+            lista_copia = processar_lista_emails(copia)
+            
+            if not lista_destinatarios:
+                continue  # Pula para o próximo provedor
+            
+            todos_destinatarios = lista_destinatarios + lista_copia
 
-        lista_destinatarios = processar_lista_emails(destinatario)
-        lista_copia = processar_lista_emails(copia)
-        
-        if not lista_destinatarios:
-            return False, "Nenhum e-mail de destinatário válido encontrado."
+            # Criar mensagem
+            msg = MIMEMultipart('alternative')
+            msg['From'] = provedor['from_email']
+            msg['To'] = ', '.join(lista_destinatarios)
+            
+            if lista_copia:
+                msg['Cc'] = ', '.join(lista_copia)
 
-        todos_destinatarios = lista_destinatarios + lista_copia
+            msg['Subject'] = assunto
+            msg.attach(MIMEText(corpo, 'html', 'utf-8'))
 
-        # Criar mensagem
-        msg = MIMEMultipart('alternative') # Usar 'alternative' para corpo HTML
-        msg['From'] = EMAIL_REMETENTE
-        msg['To'] = ', '.join(lista_destinatarios)
-        
-        if lista_copia:
-            msg['Cc'] = ', '.join(lista_copia)
+            # 📎 Anexar imagem (se fornecida e válida)
+            if imagem_url:
+                try:
+                    response = requests.get(imagem_url, timeout=5) 
+                    if response.status_code == 200:
+                        img_data = response.content
+                        image_mime = MIMEImage(img_data)
+                        image_mime.add_header('Content-Disposition', 'attachment', filename="imagem_ocorrencia.jpg")
+                        msg.attach(image_mime)
+                except Exception as e:
+                    print(f"⚠️ {provedor['nome']}: Erro ao processar imagem: {e}")
 
-        msg['Subject'] = assunto
-        msg['Reply-To'] = "naoresponda@clicklog.com.br" 
+            # Enviar via SMTP
+            server = smtplib.SMTP(provedor['host'], provedor['port'], timeout=15)
+            server.starttls()
+            server.login(provedor['username'], provedor['password'])
+            
+            server.sendmail(provedor['from_email'], todos_destinatarios, msg.as_string())
+            server.quit()
 
-        msg.attach(MIMEText(corpo, 'html', 'utf-8')) # Adicionei utf-8 para garantir caracteres especiais
+            print(f"✅ E-mail enviado com sucesso via {provedor['nome']}")
+            return True, f"E-mail enviado com sucesso via {provedor['nome']}", provedor['nome']
 
-        # 📎 Anexar imagem (se fornecida e válida)
-        if imagem_url:
-            try:
-                response = requests.get(imagem_url, timeout=5) 
-                if response.status_code == 200:
-                    img_data = response.content
-                    image_mime = MIMEImage(img_data)
-                    image_mime.add_header('Content-Disposition', 'attachment', filename="imagem_ocorrencia.jpg")
-                    msg.attach(image_mime)
-            except Exception as e:
-                print(f"⚠️ Resend SMTP: Erro ao processar imagem para anexo: {e}")
-                # Silencia erro de imagem para garantir que o texto chegue
+        except smtplib.SMTPAuthenticationError as e:
+            print(f"❌ {provedor['nome']}: Falha na autenticação - {e}")
+            if provedor['nome'] == 'Resend':
+                print("🔄 Conta Resend pode estar suspensa, tentando Gmail...")
+            continue  # Tenta o próximo provedor
+            
+        except smtplib.SMTPException as e:
+            print(f"❌ {provedor['nome']}: Erro SMTP - {e}")
+            continue  # Tenta o próximo provedor
+            
+        except Exception as e:
+            print(f"❌ {provedor['nome']}: Erro inesperado - {e}")
+            continue  # Tenta o próximo provedor
 
-        # Enviar via SMTP
-        server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15)
-        server.starttls() # Iniciar conexão segura
-        server.login(SMTP_USERNAME, SMTP_PASSWORD) # Usar as credenciais do Resend
-        
-        server.sendmail(EMAIL_REMETENTE, todos_destinatarios, msg.as_string())
-        
-        server.quit()
+    # Se chegou aqui, todos os provedores falharam
+    return False, "Todos os provedores de e-mail falharam", "Nenhum"
 
-        return True, "E-mail enviado com sucesso via Resend"
-
-    except smtplib.SMTPAuthenticationError:
-        return False, "Falha na autenticação SMTP com Resend. Verifique seu SMTP_USERNAME e SMTP_PASSWORD."
-    except smtplib.SMTPException as e:
-        return False, f"Erro SMTP com Resend: {e}"
-    except Exception as e:
-        return False, f"Erro inesperado ao enviar e-mail via Resend: {str(e)}"
+def enviar_email(destinatario, copia, assunto, corpo, imagem_url=None):
+    """Interface compatível que usa o sistema de backup"""
+    sucesso, mensagem, provedor = enviar_email_com_backup(destinatario, copia, assunto, corpo, imagem_url)
+    return sucesso, mensagem
 #--------------------------------------------------------------------------------------------
 
 # --- COLOQUE ESTE BLOCO APÓS AS FUNÇÕES DE E-MAIL ---
@@ -864,6 +901,81 @@ def enviar_email_finalizacao(ocorr_atualizada):
             return False, "Cliente não possui e-mail cadastrado"
     except Exception as e:
         return False, f"Erro ao enviar e-mail de finalização: {e}"
+################################################################################
+def registrar_envio_email_com_provedor(ocorrencia, tipo_email, provedor_usado, sucesso):
+    """Registra qual provedor foi usado para enviar o e-mail"""
+    try:
+        supabase.table("emails_enviados").insert({
+            "data_hora": obter_data_hora_atual_brasil().isoformat(),
+            "tipo": tipo_email,
+            "cliente": ocorrencia.get('cliente', '-'),
+            "email": ocorrencia.get('email_destinatario', '-'),
+            "ticket": ocorrencia.get('numero_ticket', '-'),
+            "nota_fiscal": ocorrencia.get('nota_fiscal', '-'),
+            "status": "Enviado" if sucesso else "Falhou",
+            "provedor": provedor_usado
+        }).execute()
+    except Exception as e:
+        print(f"Erro ao registrar envio: {e}")
+        ####################################################################
+
+def processar_envio_automatico():
+    """Verifica e envia e-mails para tickets que passaram do tempo limite (Otimizado e Seguro)."""
+    try:
+        print("🔄 Iniciando processamento automático de e-mails...")
+        
+        # Buscar apenas tickets que realmente precisam de verificação
+        cols_para_alertas = "id, numero_ticket, nota_fiscal, cliente, focal, destinatario, cidade, motorista, tipo_de_ocorrencia, observacoes, responsavel, status, data_abertura_manual, hora_abertura_manual, email_enviado_abertura, email_enviado_90min, imagem_url"
+
+        response = supabase.table("ocorrencias") \
+            .select(cols_para_alertas) \
+            .eq("status", "Aberta") \
+            .or_("email_enviado_abertura.eq.false,email_enviado_90min.eq.false,email_enviado_abertura.is.null,email_enviado_90min.is.null") \
+            .execute()
+        
+        tickets_pendentes = response.data
+        if not tickets_pendentes:
+            print("ℹ️ Nenhum ticket pendente para verificação de e-mail.")
+            return
+
+        print(f"📋 Encontrados {len(tickets_pendentes)} tickets para verificação.")
+        
+        emails_enviados_30min = 0
+        emails_enviados_90min = 0
+        
+        for ocorr in tickets_pendentes:
+            ticket_num = ocorr.get('numero_ticket', 'N/A')
+            
+            # Verificação e envio de e-mail de 30min
+            if not ocorr.get("email_enviado_abertura"):
+                try:
+                    sucesso, mensagem = verificar_e_enviar_email_abertura(ocorr)
+                    if sucesso:
+                        emails_enviados_30min += 1
+                        print(f"✅ E-mail 30min enviado para ticket {ticket_num}")
+                    elif "já enviado" not in mensagem and "finalizada" not in mensagem:
+                        print(f"⚠️ Ticket {ticket_num}: {mensagem}")
+                except Exception as e:
+                    print(f"❌ Erro ao processar e-mail 30min para ticket {ticket_num}: {e}")
+
+            # Verificação e envio de e-mail de 90min
+            if not ocorr.get("email_enviado_90min"):
+                try:
+                    sucesso, mensagem = verificar_e_enviar_email_90min(ocorr)
+                    if sucesso:
+                        emails_enviados_90min += 1
+                        print(f"✅ E-mail 90min enviado para ticket {ticket_num}")
+                    elif "já enviado" not in mensagem and "finalizada" not in mensagem:
+                        print(f"⚠️ Ticket {ticket_num}: {mensagem}")
+                except Exception as e:
+                    print(f"❌ Erro ao processar e-mail 90min para ticket {ticket_num}: {e}")
+
+        print(f"📊 Processamento concluído: {emails_enviados_30min} e-mails de 30min, {emails_enviados_90min} e-mails de 90min enviados.")
+
+    except Exception as e:
+        print(f"⚠️ Erro crítico no processamento automático: {e}")
+
+        ############################################################################
 
 def verificar_e_enviar_email_abertura(ocorrencia):
     """
@@ -1821,7 +1933,8 @@ if st.session_state.get("login", False):
         # Verifique se já passou tempo suficiente desde a última verificação
         # A verificação deve ocorrer a cada 7 minutos para corresponder ao autorefresh
         if agora - st.session_state.ultima_verificacao_email >= timedelta(minutes=10):
-            print("📢 Executando verificação e envio de e-mails periódicos (a cada 7 min)...")
+            agora_formatado = obter_data_hora_atual_brasil().strftime("%d/%m/%Y %H:%M:%S")
+            print(f"📢 Executando verificação e envio de e-mails periódicos (a cada 7 min) em {agora_formatado}...")
             
             # --- SPINNER PARA INDICAR PROCESSAMENTO ---
             # ATENÇÃO: Este spinner indica que a tela estará bloqueada durante a execução desta parte.
@@ -2731,3 +2844,23 @@ if st.session_state.get("login", False):
                 suc, msg = atualizar_tempo_envio_email(tempo_envio)
                 if suc: st.success(msg)
                 else: st.error(msg)
+#########################################################################
+def testar_sistema_backup():
+    """Função temporária para testar o sistema de backup"""
+    print("🧪 Testando sistema de backup de e-mail...")
+    
+    # Teste com e-mail seu
+    sucesso, mensagem, provedor = enviar_email_com_backup(
+        destinatario="seu_email@gmail.com",  # Coloque seu e-mail aqui
+        copia="",
+        assunto="Teste Sistema Backup ClickLog",
+        corpo="<h2>Teste do Sistema</h2><p>Se recebeu este e-mail, o backup está funcionando!</p>"
+    )
+    
+    print(f"Resultado: {sucesso}")
+    print(f"Mensagem: {mensagem}")
+    print(f"Provedor usado: {provedor}")
+    
+    return sucesso, mensagem, provedor
+
+    testar_sistema_backup()
