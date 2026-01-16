@@ -47,7 +47,7 @@ EMAIL_REMETENTE = "ticket@clicklogtransportes.com.br" # Certifique-se que este e
 # SMTP_USERNAME para Resend é sempre "resend"
 SMTP_USERNAME = "resend" 
 # SMTP_PASSWORD para Resend é sua API Key
-SMTP_PASSWORD = "re_HE7DessE_LJaSvUvwiY17hjXC2nq8xvo8" # <--- SUA CHAVE API DO RESEND AQUI
+SMTP_PASSWORD = "re_Pu2eoqr2_F79XHV2ca2YcP5qcHf6NNGzD" # <--- SUA CHAVE API DO RESEND AQUI
 
 # Servidor SMTP do Resend
 SMTP_HOST = "smtp.resend.com" # Host SMTP para envio do Resend
@@ -594,7 +594,7 @@ def enviar_email_com_backup(destinatario, copia, assunto, corpo, imagem_url=None
             "host": "smtp.resend.com",
             "port": 587,
             "username": "resend",
-            "password": "re_HE7DessE_LJaSvUvwiY17hjXC2nq8xvo8",  # Sua chave atual
+            "password": "re_Pu2eoqr2_F79XHV2ca2YcP5qcHf6NNGzD",  # Sua chave atual
             "from_email": "ClickLog Transportes <ticket@clicklogtransportes.com.br>"
         },
         {
