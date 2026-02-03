@@ -602,7 +602,7 @@ def enviar_email_com_backup(destinatario, copia, assunto, corpo, imagem_url=None
             "host": "smtp.gmail.com",
             "port": 587,
             "username": "ticketclicklogtransportes@gmail.com",
-            "password": "hqzb srwr eeys ztmx",
+            "password": "gpbh tjyq wyvi jibs",
             "from_email": "ClickLog Transportes <ticketclicklogtransportes@gmail.com>"
         }
     ]
@@ -1069,6 +1069,8 @@ def verificar_e_enviar_email_abertura(ocorrencia):
                 <p>Prezado(a) cliente <span class="important">{nome_cliente}</span>,</p>
 
                 <p>
+                    ⚠️ Este é um e-mail automático. Por favor, não responda.
+
                     Informamos que o veículo referente à entrega abaixo identificada
                     encontra-se no ponto de descarga há mais de <span class="important">{int(tempo_limite_min)} minutos</span>.
                 </p>
