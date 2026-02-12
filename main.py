@@ -2716,7 +2716,7 @@ if st.session_state.get("login", False):
                     # COLUNA 2
                     with col_n2:
                         email_p = st.text_input("E-mail Principal")
-                        email_c = st.text_input("Emails em Cópia (;)")
+                        email_c = st.text_input("Emails em Cópia - Mais de um email usar ( ; ) para separar")
                     
                     st.markdown("---")
                     if st.form_submit_button("Salvar Novo Cliente"):
@@ -2792,7 +2792,7 @@ if st.session_state.get("login", False):
                                 val_ep = dados.get("enviar_para_email")
                                 val_ec = dados.get("email_copia")
                                 novo_ep = st.text_input("E-mail Principal", value=str(val_ep) if val_ep else "")
-                                novo_ec = st.text_input("Emails em Cópia (;)", value=str(val_ec) if val_ec else "")
+                                novo_ec = st.text_input("Emails em Cópia - Mais de um email usar ( ; ) para separar", value=str(val_ec) if val_ec else "")
                             
                             st.markdown("---")
                             if st.form_submit_button("Salvar Alterações"):
