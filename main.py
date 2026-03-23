@@ -937,13 +937,13 @@ def classificar_ocorrencia_por_tempo(data_str, hora_str):
         if total_horas >= 12:
             # Calcula em qual "ciclo de 12 horas" o ticket está
             multiplo_12 = int(total_horas // 12) * 12
-            return f"🚨 ALERTA {multiplo_12}H+", "#A80303" # Fundo Vermelho Escuro
+            return f"🚨 ALERTA Aberto + de {multiplo_12}Horas", "#A80303" # Fundo Vermelho Escuro
             
         elif diferenca <= timedelta(minutes=15): return "Até 15min", "#2ecc71"  
         elif diferenca <= timedelta(minutes=30): return "15-30min", "#f39c12" 
         elif diferenca <= timedelta(minutes=45): return "30-45min", "#e344c8" 
-        elif diferenca <= timedelta(minutes=90): return "45-90min", "#750080" 
-        else: return "Acima de 90min", "#882068"  
+        elif diferenca <= timedelta(minutes=90): return "45-90min", "#B48401" 
+        else: return "Acima de 90min", "#750754"  
     except Exception:
         return "Erro", "gray"
 
@@ -1602,132 +1602,122 @@ if st.session_state.get("login", False):
                         else:
                             st.error(msg)
 
-        count = st_autorefresh(interval=60 * 1000, key="refresh_painel_aba2")
-        
-        carregar_ocorrencias_abertas.clear()
-        st.session_state.ocorrencias_abertas = carregar_ocorrencias_abertas()
+        # --- 🗑️ O st_autorefresh antigo foi removido daqui ---
 
+        # (Mantemos a checagem de emails em background a cada 7 min)
         agora = datetime.now()
         if "ultima_verificacao_email" not in st.session_state:
             st.session_state.ultima_verificacao_email = agora - timedelta(minutes=8) 
 
         if agora - st.session_state.ultima_verificacao_email >= timedelta(minutes=7):
             print(f"📢 [Background] Verificando e-mails automáticos em {agora.strftime('%H:%M:%S')}...")
-            
             try:
                 resultados_notificacao = notificar_ocorrencias_abertas()
-                
                 total_enviados = sum(1 for res in resultados_notificacao if res["status"] == "sucesso")
                 if total_enviados > 0: 
-                    carregar_ocorrencias_abertas.clear()
-                    st.session_state.ocorrencias_abertas = carregar_ocorrencias_abertas()
                     st.toast(f"✅ {total_enviados} alerta(s) de e-mail enviados em 2º plano.", icon="📧")
-                
                 st.session_state.ultima_verificacao_email = agora 
-                
             except Exception as e:
                 print(f"❌ Erro no background job: {e}")
 
-        col_titulo, col_botao_atualizar = st.columns([5, 1]) 
-        
-        with col_botao_atualizar:
-            if st.button("🔄 Atualizar Dados", key="btn_atualizar_abertas_aba2", use_container_width=True):
-                st.rerun()
 
-        titulo_placeholder = col_titulo.empty()
-
-        if "ocorrencias_abertas" not in st.session_state:
-            st.session_state.ocorrencias_abertas = carregar_ocorrencias_abertas()
-
-        ocorrencias_abertas = st.session_state.get("ocorrencias_abertas", [])
-        
-        lista_focais = sorted(set((ocorr.get('focal') or 'Sem Focal').strip() for ocorr in ocorrencias_abertas), key=lambda x: str(x).lower())
-
-        focal_selecionado = st.selectbox("🔎 Filtrar por Focal:", options=["Todos"] + lista_focais, index=0)
-
-        if focal_selecionado != "Todos":
-            ocorrencias_filtradas = [ocorr for ocorr in ocorrencias_abertas if (ocorr.get('focal') or 'Sem Focal').strip() == focal_selecionado]
-        else:
-            ocorrencias_filtradas = ocorrencias_abertas
-
-        qtd_exibida = len(ocorrencias_filtradas)
-        titulo_placeholder.header(f"Ocorrências em Aberto ({qtd_exibida})")
-
-        if not ocorrencias_filtradas:
-            st.info("ℹ️ Nenhuma ocorrência encontrada para este filtro.")
-        else:
-            num_colunas = 4
+        # ====================================================================
+        # 🟢 O NOVO MOTOR DE MONITORAMENTO (SILENCIOSO E FLUIDO)
+        # O parâmetro run_every="60s" faz apenas esse bloco rodar em loop
+        # ====================================================================
+        @st.fragment(run_every="60s")
+        def exibir_painel_de_monitoramento():
             
-            # 🟢 INJEÇÃO DA ANIMAÇÃO NEON NO LOCAL CORRETO
-            st.markdown("""
-            <style>
-            @keyframes pulse-neon-red {
-                0% { 
-                    box-shadow: 0 0 5px rgba(168, 3, 3, 0.2); 
-                    border-color: #2a2a3d; 
-                }
-                50% { 
-                    box-shadow: 0 0 20px rgba(255, 0, 0, 0.8), 0 0 35px rgba(255, 0, 0, 0.5), inset 0 0 10px rgba(255, 0, 0, 0.2); 
-                    border-color: #ff4444; 
-                }
-                100% { 
-                    box-shadow: 0 0 5px rgba(168, 3, 3, 0.2); 
-                    border-color: #2a2a3d; 
-                }
-            }
-            .neon-critico {
-                animation: pulse-neon-red 1.5s infinite alternate ease-in-out !important;
-            }
-            </style>
-            """, unsafe_allow_html=True)
+            # 1. Puxa os dados fresquinhos do banco toda vez que o ciclo roda
+            carregar_ocorrencias_abertas.clear()
+            ocorrencias_abertas = carregar_ocorrencias_abertas()
+            st.session_state.ocorrencias_abertas = ocorrencias_abertas
+
+            # 2. Renderiza o cabeçalho e os filtros
+            col_titulo, col_botao_atualizar = st.columns([5, 1]) 
+            with col_botao_atualizar:
+                if st.button("🔄 Atualizar Dados", key="btn_atualizar_abertas_aba2", use_container_width=True):
+                    st.rerun() # Força atualização imediata da tela toda se o usuário quiser
+
+            lista_focais = sorted(set((ocorr.get('focal') or 'Sem Focal').strip() for ocorr in ocorrencias_abertas), key=lambda x: str(x).lower())
+            focal_selecionado = st.selectbox("🔎 Filtrar por Focal:", options=["Todos"] + lista_focais, index=0)
+
+            if focal_selecionado != "Todos":
+                ocorrencias_filtradas = [ocorr for ocorr in ocorrencias_abertas if (ocorr.get('focal') or 'Sem Focal').strip() == focal_selecionado]
+            else:
+                ocorrencias_filtradas = ocorrencias_abertas
+
+            qtd_exibida = len(ocorrencias_filtradas)
             
-            colunas = st.columns(num_colunas)
+            with col_titulo:
+                st.header(f"Ocorrências em Aberto ({qtd_exibida})")
 
-            for idx, ocorr in enumerate(ocorrencias_filtradas):
-                status = "Data manual ausente"
-                cor = "gray"
-                abertura_manual_formatada = "Não informada"
-                data_abertura_manual = ocorr.get("data_abertura_manual")
-                hora_abertura_manual = ocorr.get("hora_abertura_manual")
+            if not ocorrencias_filtradas:
+                st.info("ℹ️ Nenhuma ocorrência encontrada para este filtro.")
+            else:
+                num_colunas = 4
+                
+                # 🟢 INJEÇÃO DA ANIMAÇÃO NEON NO LOCAL CORRETO
+                st.markdown("""
+                <style>
+                @keyframes pulse-neon-red {
+                    0% { box-shadow: 0 0 5px rgba(168, 3, 3, 0.2); border-color: #2a2a3d; }
+                    50% { box-shadow: 0 0 20px rgba(255, 0, 0, 0.8), 0 0 35px rgba(255, 0, 0, 0.5), inset 0 0 10px rgba(255, 0, 0, 0.2); border-color: #ff4444; }
+                    100% { box-shadow: 0 0 5px rgba(168, 3, 3, 0.2); border-color: #2a2a3d; }
+                }
+                .neon-critico {
+                    animation: pulse-neon-red 1.5s infinite alternate ease-in-out !important;
+                }
+                </style>
+                """, unsafe_allow_html=True)
+                
+                colunas = st.columns(num_colunas)
 
-                if data_abertura_manual and hora_abertura_manual:
-                    try:
-                        dt_manual = criar_datetime_manual(data_abertura_manual, hora_abertura_manual)
-                        if dt_manual:
-                            abertura_manual_formatada = dt_manual.strftime("%d/%m/%Y %H:%M")
-                            status, cor = classificar_ocorrencia_por_tempo(data_abertura_manual, hora_abertura_manual)
-                        else: status = "Erro"
-                    except Exception as e: status = "Erro"
+                for idx, ocorr in enumerate(ocorrencias_filtradas):
+                    status = "Data manual ausente"
+                    cor = "gray"
+                    abertura_manual_formatada = "Não informada"
+                    data_abertura_manual = ocorr.get("data_abertura_manual")
+                    hora_abertura_manual = ocorr.get("hora_abertura_manual")
 
-                with colunas[idx % num_colunas]:
-                    safe_idx = f"{idx}_{ocorr.get('nota_fiscal', '')}"
-                    imagem_abertura_url = ocorr.get('imagem_url', '') 
-                    
-                    ultimo_alerta = 0
-                    email_foi_enviado = False
-                    for i in range(1, 6):
-                        if ocorr.get(f"alerta_{i}_enviado"):
-                            ultimo_alerta = i
-                            email_foi_enviado = True
-                            
-                    # --- ESTILO PREMIUM / EXECUTIVO ---
-                    bg_card = "linear-gradient(145deg, #1e1e2d, #151521)"
-                    border_color = "#2a2a3d"
-                    
-                    # 🟢 LIGA O NEON INJETANDO DIRETO NO STYLE PARA O STREAMLIT NÃO BLOQUEAR
-                    if "ALERTA" in status:
-                        estilo_dinamico = "animation: pulse-neon-red 1.2s infinite alternate ease-in-out;"
-                    else:
-                        estilo_dinamico = f"border: 1px solid {border_color}; box-shadow: 0 8px 16px rgba(0,0,0,0.4);"
-                    
-                    if ultimo_alerta > 0:
-                        alertas_html = f"<div style='background: linear-gradient(90deg, rgba(255,165,0,0.1) 0%, rgba(255,165,0,0.0) 100%); border-left: 3px solid orange; padding: 6px 10px; margin-bottom: 10px; border-radius: 4px; font-size: 0.85em;'>⚠️ <strong>Alertas:</strong> {ultimo_alerta} enviado(s)</div>"
-                    else:
-                        alertas_html = ""
+                    if data_abertura_manual and hora_abertura_manual:
+                        try:
+                            dt_manual = criar_datetime_manual(data_abertura_manual, hora_abertura_manual)
+                            if dt_manual:
+                                abertura_manual_formatada = dt_manual.strftime("%d/%m/%Y %H:%M")
+                                status, cor = classificar_ocorrencia_por_tempo(data_abertura_manual, hora_abertura_manual)
+                            else: status = "Erro"
+                        except Exception as e: status = "Erro"
 
-                    link_abertura = f'<a href="{imagem_abertura_url}" target="_blank" style="text-decoration:none; color: #4facfe; font-size:0.85em; background:#4facfe20; padding:3px 10px; border-radius:12px;">📸 Ver Anexo</a>' if imagem_abertura_url else ''
-                    
-                    html_card = f"""
+                    with colunas[idx % num_colunas]:
+                        safe_idx = f"{idx}_{ocorr.get('nota_fiscal', '')}"
+                        imagem_abertura_url = ocorr.get('imagem_url', '') 
+                        
+                        ultimo_alerta = 0
+                        email_foi_enviado = False
+                        for i in range(1, 6):
+                            if ocorr.get(f"alerta_{i}_enviado"):
+                                ultimo_alerta = i
+                                email_foi_enviado = True
+                                
+                        # --- ESTILO PREMIUM / EXECUTIVO ---
+                        bg_card = "linear-gradient(145deg, #1e1e2d, #151521)"
+                        border_color = "#2a2a3d"
+                        
+                        # 🟢 LIGA O NEON INJETANDO DIRETO NO STYLE PARA O STREAMLIT NÃO BLOQUEAR
+                        if "ALERTA" in status:
+                            estilo_dinamico = "animation: pulse-neon-red 1.2s infinite alternate ease-in-out;"
+                        else:
+                            estilo_dinamico = f"border: 1px solid {border_color}; box-shadow: 0 8px 16px rgba(0,0,0,0.4);"
+                        
+                        if ultimo_alerta > 0:
+                            alertas_html = f"<div style='background: linear-gradient(90deg, rgba(255,165,0,0.1) 0%, rgba(255,165,0,0.0) 100%); border-left: 3px solid orange; padding: 6px 10px; margin-bottom: 10px; border-radius: 4px; font-size: 0.85em;'>⚠️ <strong>Alertas:</strong> {ultimo_alerta} enviado(s)</div>"
+                        else:
+                            alertas_html = ""
+
+                        link_abertura = f'<a href="{imagem_abertura_url}" target="_blank" style="text-decoration:none; color: #4facfe; font-size:0.85em; background:#4facfe20; padding:3px 10px; border-radius:12px;">📸 Ver Anexo</a>' if imagem_abertura_url else ''
+                        
+                        html_card = f"""
 <div style='background: {bg_card}; border-top: 4px solid {cor}; padding:15px; border-radius:12px; color:#e2e2e2; margin-bottom:15px; height:520px; overflow-y:auto; font-family: "Segoe UI", Tahoma, sans-serif; {estilo_dinamico}'>
 <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px;'>
 <div style='font-size: 1.15em; font-weight: 600; color: #ffffff;'>Ticket #{str(ocorr.get('numero_ticket', 'N/A'))[-5:]}</div>
@@ -1774,18 +1764,21 @@ if st.session_state.get("login", False):
 </div>
 </div>
 """
-                    st.markdown(html_card, unsafe_allow_html=True)
+                        st.markdown(html_card, unsafe_allow_html=True)
 
-                    c_btn1, c_btn2 = st.columns(2)
-                    with c_btn1:
-                        if st.button(" Finalizar", key=f"btn_fin_{safe_idx}", use_container_width=True):
-                            dialog_finalizar_ocorrencia(ocorr)
-                    with c_btn2:
-                        if email_foi_enviado:
-                            st.button("✏️ Editar", key=f"btn_edit_{safe_idx}", disabled=True, help="Bloqueado: O primeiro alerta já foi enviado.", use_container_width=True)
-                        else:
-                            if st.button("✏️ Editar", key=f"btn_edit_{safe_idx}", use_container_width=True):
-                                dialog_editar_ocorrencia(ocorr)
+                        c_btn1, c_btn2 = st.columns(2)
+                        with c_btn1:
+                            if st.button(" Finalizar", key=f"btn_fin_{safe_idx}", use_container_width=True):
+                                dialog_finalizar_ocorrencia(ocorr)
+                        with c_btn2:
+                            if email_foi_enviado:
+                                st.button("✏️ Editar", key=f"btn_edit_{safe_idx}", disabled=True, help="Bloqueado: O primeiro alerta já foi enviado.", use_container_width=True)
+                            else:
+                                if st.button("✏️ Editar", key=f"btn_edit_{safe_idx}", use_container_width=True):
+                                    dialog_editar_ocorrencia(ocorr)
+
+        # 🟢 Executa o painel na tela
+        exibir_painel_de_monitoramento()
 
 
     # =========================
