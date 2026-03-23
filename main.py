@@ -1468,18 +1468,16 @@ if st.session_state.get("login", False):
                 else:
                     st.error("❌ Erro ao salvar a ocorrência no banco de dados. Tente novamente.")
     # =========================
-    #     ABA 2 - EM ABERTO (COM CONTAGEM DINÂMICA)
+    #     ABA 2 - EM ABERTO 
     # =========================
     if st.session_state.aba_ativa == "aba2":
         
-        # --- 🟢 NOVO: Modal flutuante para FINALIZAR o ticket ---
         @st.dialog(" Finalizar Ocorrência")
         def dialog_finalizar_ocorrencia(ocorr):
             st.markdown(f"**Ticket #:** {str(ocorr.get('numero_ticket', '-'))[-5:]} | **Cliente:** {ocorr.get('cliente', '-')}")
             
             with st.form(f"form_fin_ocorr_{ocorr['id']}"):
                 
-                # Os campos de texto vêm PRIMEIRO para "roubar" o auto-focus e o calendário não abrir sozinho
                 complemento = st.text_input("Complementar*")
                 
                 col_m, col_o = st.columns(2)
@@ -1529,7 +1527,6 @@ if st.session_state.get("login", False):
                         else: 
                             st.error(mensagem)
 
-        # --- 🟢 NOVO: Modal flutuante para editar o ticket ---
         @st.dialog("✏️ Editar Ocorrência")
         def dialog_editar_ocorrencia(ocorr):
             st.markdown(f"**Ticket #:** {str(ocorr.get('numero_ticket', '-'))[-5:]}")
@@ -1538,7 +1535,6 @@ if st.session_state.get("login", False):
                 c1, c2 = st.columns(2)
                 
                 with c1:
-                    # Pega o responsável original (ignora se já tiver a tag de edição anterior)
                     resp_original = ocorr.get('responsavel', '').split(" (Editado")[0]
                     st.text_input("Aberto por", value=resp_original, disabled=True)
                     
@@ -1583,7 +1579,6 @@ if st.session_state.get("login", False):
                     else:
                         novo_focal = cliente_to_focal.get(novo_cli, "")
                         
-                        # Atualiza o responsável anexando quem editou
                         usuario_edit = st.session_state.username
                         novo_responsavel = f"{resp_original} (Editado por {usuario_edit})"
                         
@@ -1606,7 +1601,6 @@ if st.session_state.get("login", False):
                             st.rerun()
                         else:
                             st.error(msg)
-        # -------------------------------------------------------------
 
         count = st_autorefresh(interval=60 * 1000, key="refresh_painel_aba2")
         
@@ -1663,6 +1657,30 @@ if st.session_state.get("login", False):
             st.info("ℹ️ Nenhuma ocorrência encontrada para este filtro.")
         else:
             num_colunas = 4
+            
+            # 🟢 INJEÇÃO DA ANIMAÇÃO NEON NO LOCAL CORRETO
+            st.markdown("""
+            <style>
+            @keyframes pulse-neon-red {
+                0% { 
+                    box-shadow: 0 0 5px rgba(168, 3, 3, 0.2); 
+                    border-color: #2a2a3d; 
+                }
+                50% { 
+                    box-shadow: 0 0 20px rgba(255, 0, 0, 0.8), 0 0 35px rgba(255, 0, 0, 0.5), inset 0 0 10px rgba(255, 0, 0, 0.2); 
+                    border-color: #ff4444; 
+                }
+                100% { 
+                    box-shadow: 0 0 5px rgba(168, 3, 3, 0.2); 
+                    border-color: #2a2a3d; 
+                }
+            }
+            .neon-critico {
+                animation: pulse-neon-red 1.5s infinite alternate ease-in-out !important;
+            }
+            </style>
+            """, unsafe_allow_html=True)
+            
             colunas = st.columns(num_colunas)
 
             for idx, ocorr in enumerate(ocorrencias_filtradas):
@@ -1685,7 +1703,6 @@ if st.session_state.get("login", False):
                     safe_idx = f"{idx}_{ocorr.get('nota_fiscal', '')}"
                     imagem_abertura_url = ocorr.get('imagem_url', '') 
                     
-                    # 🟢 Exibir Apenas o Último Alerta Enviado e validar se podemos editar
                     ultimo_alerta = 0
                     email_foi_enviado = False
                     for i in range(1, 6):
@@ -1697,6 +1714,12 @@ if st.session_state.get("login", False):
                     bg_card = "linear-gradient(145deg, #1e1e2d, #151521)"
                     border_color = "#2a2a3d"
                     
+                    # 🟢 LIGA O NEON INJETANDO DIRETO NO STYLE PARA O STREAMLIT NÃO BLOQUEAR
+                    if "ALERTA" in status:
+                        estilo_dinamico = "animation: pulse-neon-red 1.2s infinite alternate ease-in-out;"
+                    else:
+                        estilo_dinamico = f"border: 1px solid {border_color}; box-shadow: 0 8px 16px rgba(0,0,0,0.4);"
+                    
                     if ultimo_alerta > 0:
                         alertas_html = f"<div style='background: linear-gradient(90deg, rgba(255,165,0,0.1) 0%, rgba(255,165,0,0.0) 100%); border-left: 3px solid orange; padding: 6px 10px; margin-bottom: 10px; border-radius: 4px; font-size: 0.85em;'>⚠️ <strong>Alertas:</strong> {ultimo_alerta} enviado(s)</div>"
                     else:
@@ -1705,7 +1728,7 @@ if st.session_state.get("login", False):
                     link_abertura = f'<a href="{imagem_abertura_url}" target="_blank" style="text-decoration:none; color: #4facfe; font-size:0.85em; background:#4facfe20; padding:3px 10px; border-radius:12px;">📸 Ver Anexo</a>' if imagem_abertura_url else ''
                     
                     html_card = f"""
-<div style='background: {bg_card}; border: 1px solid {border_color}; border-top: 4px solid {cor}; padding:15px; border-radius:12px; color:#e2e2e2; box-shadow: 0 8px 16px rgba(0,0,0,0.4); margin-bottom:15px; height:520px; overflow-y:auto; font-family: "Segoe UI", Tahoma, sans-serif;'>
+<div style='background: {bg_card}; border-top: 4px solid {cor}; padding:15px; border-radius:12px; color:#e2e2e2; margin-bottom:15px; height:520px; overflow-y:auto; font-family: "Segoe UI", Tahoma, sans-serif; {estilo_dinamico}'>
 <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px;'>
 <div style='font-size: 1.15em; font-weight: 600; color: #ffffff;'>Ticket #{str(ocorr.get('numero_ticket', 'N/A'))[-5:]}</div>
 <div style='background-color: {cor}; color: #ffffff; padding: 3px 10px; border-radius: 20px; font-size: 0.75em; font-weight: bold;'>{status}</div>
@@ -1753,7 +1776,6 @@ if st.session_state.get("login", False):
 """
                     st.markdown(html_card, unsafe_allow_html=True)
 
-                    # 🟢 Botões de Ação Simplificados (Agora usando Dialogs)
                     c_btn1, c_btn2 = st.columns(2)
                     with c_btn1:
                         if st.button(" Finalizar", key=f"btn_fin_{safe_idx}", use_container_width=True):
