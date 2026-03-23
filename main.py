@@ -173,7 +173,7 @@ def inserir_ocorrencia_supabase(dados):
             "responsavel": dados["responsavel"],
             "status": "Aberta",
             "data_hora_abertura": data_hora_str,  
-            "abertura_timestamp": timestamp_iso,  
+            "abertura_timestamp": dados.get("abertura_timestamp", timestamp_iso),  
             "permanencia": dados["permanencia"],
             "complementar": dados["complementar"],
             "data_abertura_manual": dados["data_abertura_manual"],
@@ -428,7 +428,8 @@ def carregar_tempo_envio_email():
 @st.cache_data(ttl=420) 
 def carregar_ocorrencias_abertas():
     try:
-        cols = "id, numero_ticket, nota_fiscal, cliente, focal, destinatario, cidade, motorista, tipo_de_ocorrencia, observacoes, responsavel, status, data_abertura_manual, hora_abertura_manual, alerta_1_enviado, alerta_2_enviado, alerta_3_enviado, alerta_4_enviado, alerta_5_enviado, imagem_url"
+        # 🟢 AQUI: Adicionamos 'abertura_timestamp' na string de colunas (cols)
+        cols = "id, numero_ticket, nota_fiscal, cliente, focal, destinatario, cidade, motorista, tipo_de_ocorrencia, observacoes, responsavel, status, data_abertura_manual, hora_abertura_manual, abertura_timestamp, alerta_1_enviado, alerta_2_enviado, alerta_3_enviado, alerta_4_enviado, alerta_5_enviado, imagem_url"
         if st.session_state.is_admin:
             response = supabase.table("ocorrencias").select(cols).eq("status", "Aberta").order("data_hora_abertura", desc=True).execute()
         else:
@@ -442,7 +443,8 @@ def carregar_ocorrencias_abertas():
 
 def carregar_ocorrencias_por_focal(focal=None):
     try:
-        cols = "id, numero_ticket, nota_fiscal, cliente, focal, destinatario, cidade, motorista, tipo_de_ocorrencia, observacoes, responsavel, status, data_abertura_manual, hora_abertura_manual, alerta_1_enviado, alerta_2_enviado, alerta_3_enviado, alerta_4_enviado, alerta_5_enviado, imagem_url"
+        # 🟢 AQUI TAMBÉM: Adicionamos 'abertura_timestamp'
+        cols = "id, numero_ticket, nota_fiscal, cliente, focal, destinatario, cidade, motorista, tipo_de_ocorrencia, observacoes, responsavel, status, data_abertura_manual, hora_abertura_manual, abertura_timestamp, alerta_1_enviado, alerta_2_enviado, alerta_3_enviado, alerta_4_enviado, alerta_5_enviado, imagem_url"
         if st.session_state.is_admin:
             response = supabase.table("ocorrencias").select(cols).eq("status", "Aberta").eq("focal", focal).order("data_hora_abertura", desc=True).execute()
         else:
@@ -453,7 +455,6 @@ def carregar_ocorrencias_por_focal(focal=None):
     except Exception as e:
         st.error(f"Erro ao carregar ocorrências por focal: {e}")
         return []
-
 def obter_focais_com_contagem():
     try:
         ocorrencias = carregar_ocorrencias_abertas() 
@@ -861,6 +862,7 @@ def enviar_email_finalizacao(ocorr_atualizada):
                 </table>
                 <p><strong>Complemento:</strong> {ocorr_atualizada.get('complementar', 'Sem complemento.')}</p>
                 <p>Atenciosamente,<br>Equipe de Monitoramento ClikLog Transportes</p>
+                <img src="https://vismjxhlsctehpvgmata.supabase.co/storage/v1/object/public/assets/logo.png" alt="Logo ClickLog" style="width: 150px; height: auto; margin-top: 10px;">
             </body>
             </html>
             """
@@ -1423,11 +1425,22 @@ if st.session_state.get("login", False):
             if not imagem:
                 erros_abertura.append("Anexo de imagem é obrigatório para abertura de Ticket.")
 
+            # --- 🟢 NOVA LÓGICA: TRAVAR DATA FUTURA NA ABERTURA ---
+            agora_real = obter_data_hora_atual_brasil()
+            data_hora_digitada_abertura = criar_datetime_manual(data_abertura_manual.strftime("%Y-%m-%d"), hora_abertura_manual.strftime("%H:%M:%S"))
+            
+            if data_hora_digitada_abertura and data_hora_digitada_abertura > agora_real + timedelta(minutes=5): # 5 min de tolerância
+                erros_abertura.append("Não é permitido abrir tickets com data ou hora no futuro.")
+            # ----------------------------------------------------
+
             if erros_abertura:
                 exibir_erros_aba1(erros_abertura)
             else:
                 with st.spinner("Salvando no banco de dados..."):
-                    numero_ticket = obter_data_hora_atual_brasil().strftime("%Y%m%d%H%M%S%f")
+                    # 🟢 PEGA A HORA EXATA DO CLIQUE PARA SER O TIMESTAMP "REAL"
+                    agora_real_criacao = obter_data_hora_atual_brasil()
+                    
+                    numero_ticket = agora_real_criacao.strftime("%Y%m%d%H%M%S%f")
                     data_abertura_manual_str = data_abertura_manual.strftime("%Y-%m-%d")
                     hora_abertura_manual_str = hora_abertura_manual.strftime("%H:%M:%S")
 
@@ -1438,6 +1451,7 @@ if st.session_state.get("login", False):
                         "cidade": cidade, "motorista": motorista, "tipo_de_ocorrencia": ", ".join(tipo),
                         "observacoes": obs, "responsavel": responsavel,
                         "data_abertura_manual": data_abertura_manual_str, "hora_abertura_manual": hora_abertura_manual_str,
+                        "abertura_timestamp": agora_real_criacao.isoformat(), # 🟢 AQUI: Salva a hora real de criação
                         "ticket_unidade": unidade_usuario, "complementar": "", "permanencia": "", "imagem_url": "",
                     }
 
@@ -1503,9 +1517,14 @@ if st.session_state.get("login", False):
                     if not complemento.strip():
                         st.warning("O campo Complementar é obrigatório.")
                     else:
-                        st.toast("Finalizando...")
+                        # 🟢 1. INICIA A BARRA DE PROGRESSO
+                        barra_progresso = st.progress(0, text="Iniciando a finalização...")
+                        tm.sleep(0.3) # Pausa rápida para a barra aparecer na tela
+                        
                         imagem_url_fin = ""
                         if imagem_finalizacao:
+                            # 🟢 2. ATUALIZA PARA 30% SE TIVER IMAGEM
+                            barra_progresso.progress(30, text="Fazendo upload do anexo...")
                             try:
                                 nome_arquivo = f"{ocorr['id']}_final_{limpar_nome_arquivo(imagem_finalizacao.name)}"
                                 supabase.storage.from_("imagens-finalizacao").upload(
@@ -1514,17 +1533,24 @@ if st.session_state.get("login", False):
                                 imagem_url_fin = supabase.storage.from_("imagens-finalizacao").get_public_url(nome_arquivo)
                             except: pass
 
+                        # 🟢 3. ATUALIZA PARA 60% (O TRABALHO PESADO)
+                        barra_progresso.progress(60, text="Atualizando e gerando e-mail de finalização...")
+                        
                         sucesso, mensagem = finalizar_ocorrencia(
                             ocorr, complemento, st.session_state[chave_data], st.session_state[chave_hora],
                             imagem_url_fin, observacao_final, numero_manifesto
                         )
 
                         if sucesso:
+                            # 🟢 4. COMPLETA 100% E FECHA
+                            barra_progresso.progress(100, text="✅ Concluído!")
                             st.success("Ticket finalizado com sucesso!")
                             carregar_ocorrencias_abertas.clear()
-                            tm.sleep(1)
+                            tm.sleep(1.5) # Dá 1.5s para o usuário ler o "Concluído" antes de sumir a tela
                             st.rerun()
                         else: 
+                            # Se der erro, a barra some e mostra o erro
+                            barra_progresso.empty()
                             st.error(mensagem)
 
         @st.dialog("✏️ Editar Ocorrência")
@@ -1572,10 +1598,17 @@ if st.session_state.get("login", False):
                 with col_hora: nova_hora = st.time_input("Hora de Abertura", value=hr_ab)
                 
                 if st.form_submit_button("Salvar Alterações"):
+                    # --- 🟢 NOVA LÓGICA: TRAVAR DATA FUTURA NA EDIÇÃO ---
+                    agora_real_edit = obter_data_hora_atual_brasil()
+                    data_hora_digitada_edit = criar_datetime_manual(nova_data.strftime("%Y-%m-%d"), nova_hora.strftime("%H:%M:%S"))
+                    # -------------------------------------------------
+
                     if not nova_nf.isdigit():
                         st.error("Nota Fiscal deve conter apenas números.")
                     elif not novo_cli:
                         st.error("Cliente é obrigatório.")
+                    elif data_hora_digitada_edit and data_hora_digitada_edit > agora_real_edit + timedelta(minutes=5): # 🟢 NOVA CONDIÇÃO
+                        st.error("Não é permitido salvar tickets com data ou hora de abertura no futuro.")
                     else:
                         novo_focal = cliente_to_focal.get(novo_cli, "")
                         
@@ -1704,7 +1737,7 @@ if st.session_state.get("login", False):
                         bg_card = "linear-gradient(145deg, #1e1e2d, #151521)"
                         border_color = "#2a2a3d"
                         
-                        # 🟢 LIGA O NEON INJETANDO DIRETO NO STYLE PARA O STREAMLIT NÃO BLOQUEAR
+                       # 🟢 LIGA O NEON INJETANDO DIRETO NO STYLE PARA O STREAMLIT NÃO BLOQUEAR
                         if "ALERTA" in status:
                             estilo_dinamico = "animation: pulse-neon-red 1.2s infinite alternate ease-in-out;"
                         else:
@@ -1716,9 +1749,40 @@ if st.session_state.get("login", False):
                             alertas_html = ""
 
                         link_abertura = f'<a href="{imagem_abertura_url}" target="_blank" style="text-decoration:none; color: #4facfe; font-size:0.85em; background:#4facfe20; padding:3px 10px; border-radius:12px;">📸 Ver Anexo</a>' if imagem_abertura_url else ''
+
+                  
+                        # --- 🟢 LÓGICA DO INDICADOR RETROATIVO "PEGA MALANDRO" ---
+                        flag_retroativo_html = ""
+                        try:
+                            # Tentamos buscar o timestamp de criação que agora reflete a verdade
+                            if "abertura_timestamp" in ocorr and ocorr["abertura_timestamp"]:
+                                dt_real = datetime.fromisoformat(ocorr["abertura_timestamp"])
+                                if dt_real.tzinfo is None:
+                                    dt_real = dt_real.replace(tzinfo=timezone.utc).astimezone(FUSO_HORARIO_BRASIL)
+                                else:
+                                    dt_real = dt_real.astimezone(FUSO_HORARIO_BRASIL)
+                                
+                                dt_manual = criar_datetime_manual(ocorr.get("data_abertura_manual", ""), ocorr.get("hora_abertura_manual", ""))
+                                
+                                if dt_real and dt_manual:
+                                    # Se a diferença de criação for de mais de 5 minutos
+                                    diferenca = (dt_real - dt_manual).total_seconds()
+                                    if diferenca > 300: 
+                                        diff_horas = int(diferenca // 3600)
+                                        diff_minutos = int((diferenca % 3600) // 60)
+                                        tempo_atraso_str = f"{diff_horas}h {diff_minutos}m" if diff_horas > 0 else f"{diff_minutos}m"
+                                        
+                                        # 🟢 EXTRAI A HORA REAL FORMATADA
+                                        hora_real_str = dt_real.strftime("%H:%M")
+                                        
+                                        # 🟢 ADICIONA A HORA REAL NO TEXTO DA TAG
+                                        flag_retroativo_html = f"<div style='margin-top: 10px; font-size: 0.75em; color: #f39c12; background: #3b2a00; border: 1px solid #755500; padding: 4px; border-radius: 4px; text-align: center;'>⚠️ Aberto Retroativamente {tempo_atraso_str} | Hora Real: {hora_real_str}</div>"
+                        except Exception as e:
+                            pass
+                        # --------------------------------------------------------
                         
                         html_card = f"""
-<div style='background: {bg_card}; border-top: 4px solid {cor}; padding:15px; border-radius:12px; color:#e2e2e2; margin-bottom:15px; height:520px; overflow-y:auto; font-family: "Segoe UI", Tahoma, sans-serif; {estilo_dinamico}'>
+<div style='background: {bg_card}; border-top: 4px solid {cor}; padding:15px; border-radius:12px; color:#e2e2e2; margin-bottom:15px; height:560px; overflow-y:auto; font-family: "Segoe UI", Tahoma, sans-serif; {estilo_dinamico}'>
 <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px;'>
 <div style='font-size: 1.15em; font-weight: 600; color: #ffffff;'>Ticket #{str(ocorr.get('numero_ticket', 'N/A'))[-5:]}</div>
 <div style='background-color: {cor}; color: #ffffff; padding: 3px 10px; border-radius: 20px; font-size: 0.75em; font-weight: bold;'>{status}</div>
@@ -1762,6 +1826,7 @@ if st.session_state.get("login", False):
 <div style='margin-top: 10px; font-size: 0.85em; color: #a0a0b0;'>
 <strong>Obs:</strong> {seguro(ocorr.get('observacoes', ''))}
 </div>
+{flag_retroativo_html}
 </div>
 """
                         st.markdown(html_card, unsafe_allow_html=True)
