@@ -930,8 +930,15 @@ def classificar_ocorrencia_por_tempo(data_str, hora_str):
         agora = obter_data_hora_atual_brasil()
         diferenca = calcular_diferenca_tempo(data_hora, agora)
         
-        # 🟢 AVALIAÇÃO CRÍTICA (12 HORAS)
-        if diferenca >= timedelta(hours=12): return "🚨 ALERTA 12H+", "#A80303" # Fundo Preto Absoluto
+        # Converte a diferença total para horas
+        total_horas = diferenca.total_seconds() / 3600
+        
+        # 🟢 NOVA LÓGICA DINÂMICA (12h+, 24h+, 36h+, 48h+...)
+        if total_horas >= 12:
+            # Calcula em qual "ciclo de 12 horas" o ticket está
+            multiplo_12 = int(total_horas // 12) * 12
+            return f"🚨 ALERTA {multiplo_12}H+", "#A80303" # Fundo Vermelho Escuro
+            
         elif diferenca <= timedelta(minutes=15): return "Até 15min", "#2ecc71"  
         elif diferenca <= timedelta(minutes=30): return "15-30min", "#f39c12" 
         elif diferenca <= timedelta(minutes=45): return "30-45min", "#e344c8" 
