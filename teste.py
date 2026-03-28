@@ -14,6 +14,8 @@ import base64
 import html
 import bcrypt
 import socket
+import threading
+import sys
 import smtplib
 import requests
 from datetime import datetime, timedelta, timezone, date, time
@@ -134,9 +136,10 @@ def criar_datetime_manual(data_str, hora_str):
 # 4. FUNÇÕES DE AUTENTICAÇÃO E USUÁRIOS
 # ====================================================================
 
-def autenticar_usuario(nome_usuario, senha):
+def autenticar_usuario(login_usuario, senha):
     try:
-        dados = supabase.table("usuarios").select("*").eq("nome_usuario", nome_usuario).execute()
+        # 🟢 AQUI: Busca pelo login_usuario em vez do nome_usuario
+        dados = supabase.table("usuarios").select("*").eq("login_usuario", login_usuario).execute()
         if dados.data:
             usuario = dados.data[0]
             if verificar_senha(senha, usuario["senha_hash"]):
@@ -173,7 +176,7 @@ def inserir_ocorrencia_supabase(dados):
             "responsavel": dados["responsavel"],
             "status": "Aberta",
             "data_hora_abertura": data_hora_str,  
-            "abertura_timestamp": timestamp_iso,  
+            "abertura_timestamp": dados.get("abertura_timestamp", timestamp_iso),  
             "permanencia": dados["permanencia"],
             "complementar": dados["complementar"],
             "data_abertura_manual": dados["data_abertura_manual"],
@@ -185,7 +188,9 @@ def inserir_ocorrencia_supabase(dados):
             "alerta_5_enviado": False,
             "email_finalizacao_enviado": False,
             "imagem_url": dados["imagem_url"],
-            "ticket_unidade": dados["ticket_unidade"]
+            "ticket_unidade": dados["ticket_unidade"],
+            "abertura_retroativa": dados.get("abertura_retroativa", False), # 🟢 NOVO CAMPO
+            "tempo_retroativo_min": dados.get("tempo_retroativo_min", 0)    # 🟢 NOVO CAMPO
         }]).execute()
         return response
     else:
@@ -273,15 +278,16 @@ motoristas = carregar_motoristas_supabase()
 @st.cache_data(ttl=3600)
 def carregar_focal_supabase():
     try:
-        response = supabase.table("clientes").select("focal").execute()
+        # Busca apenas usuários que possuam o cargo "Focal"
+        response = supabase.table("usuarios").select("nome_usuario").eq("cargo", "Focal").execute()
         if response.data:
-            focais = [item["focal"] for item in response.data if item.get("focal")]
+            focais = [item["nome_usuario"] for item in response.data if item.get("nome_usuario")]
             # 🟢 4. FOCAIS ORDENADOS
             return sorted(set(focais), key=lambda x: str(x).lower())
         else:
             return []
     except Exception as e:
-        st.error(f"Erro ao carregar focais do banco: {e}")
+        st.error(f"Erro ao carregar focais da tabela de usuários: {e}")
         return []
 
 @st.cache_data(ttl=3600)
@@ -318,6 +324,42 @@ def validar_emails_multiplos(emails):
         if email and not re.match(padrao, email):
             return False
     return True
+
+def validar_telefone(telefone):
+    """Valida se o telefone possui 10 ou 11 dígitos após remover formatações."""
+    if not telefone:
+        return False
+    numeros = re.sub(r'[^0-9]', '', str(telefone))
+    return len(numeros) in [10, 11]
+
+def validar_cpf(cpf):
+    """Valida se o CPF possui 11 dígitos numéricos e aplica lógica básica (Opcional: matemática completa de CPF)."""
+    if not cpf: return False
+    numeros = re.sub(r'[^0-9]', '', str(cpf))
+    
+    # Validação simples de tamanho e bloqueio de sequências (111.111.111-11)
+    if len(numeros) != 11 or numeros == numeros[0] * 11:
+        return False
+    # (Para uma aplicação crítica, adicione a matemática dos dígitos verificadores aqui)
+    return True
+
+def formatar_cpf(cpf):
+    """Formata uma string numérica de 11 dígitos para o padrão XXX.XXX.XXX-XX"""
+    numeros = re.sub(r'[^0-9]', '', str(cpf))
+    if len(numeros) == 11:
+        return f"{numeros[:3]}.{numeros[3:6]}.{numeros[6:9]}-{numeros[9:]}"
+    return cpf
+
+def mascarar_cpf_lgpd(cpf):
+    """Aplica máscara de segurança no CPF, exibindo apenas o bloco numérico central."""
+    if not cpf or cpf == "-":
+        return "-"
+    
+    numeros = re.sub(r'[^0-9]', '', str(cpf))
+    if len(numeros) == 11:
+        return f"***.{numeros[3:6]}.***-**"
+    
+    return "***.***.***-**" # Fallback caso o dado esteja inconsistente no banco
 
 def inserir_motorista(motorista):
     try:
@@ -428,12 +470,12 @@ def carregar_tempo_envio_email():
 @st.cache_data(ttl=420) 
 def carregar_ocorrencias_abertas():
     try:
-        cols = "id, numero_ticket, nota_fiscal, cliente, focal, destinatario, cidade, motorista, tipo_de_ocorrencia, observacoes, responsavel, status, data_abertura_manual, hora_abertura_manual, alerta_1_enviado, alerta_2_enviado, alerta_3_enviado, alerta_4_enviado, alerta_5_enviado, imagem_url"
+        # 🟢 AQUI: Adicionamos 'abertura_timestamp' na string de colunas (cols)
+        cols = "id, numero_ticket, nota_fiscal, cliente, focal, destinatario, cidade, motorista, tipo_de_ocorrencia, observacoes, responsavel, status, data_abertura_manual, hora_abertura_manual, abertura_timestamp, alerta_1_enviado, alerta_2_enviado, alerta_3_enviado, alerta_4_enviado, alerta_5_enviado, imagem_url"
         if st.session_state.is_admin:
             response = supabase.table("ocorrencias").select(cols).eq("status", "Aberta").order("data_hora_abertura", desc=True).execute()
         else:
-            dados_usuario = supabase.table("usuarios").select("unidade").eq("nome_usuario", st.session_state.username).execute().data
-            unidade_usuario = dados_usuario[0]["unidade"] if dados_usuario else None
+            unidade_usuario = st.session_state.get("unidade_usuario")
             response = supabase.table("ocorrencias").select(cols).eq("status", "Aberta").eq("ticket_unidade", unidade_usuario).order("data_hora_abertura", desc=True).execute()
         return response.data
     except Exception as e:
@@ -442,7 +484,8 @@ def carregar_ocorrencias_abertas():
 
 def carregar_ocorrencias_por_focal(focal=None):
     try:
-        cols = "id, numero_ticket, nota_fiscal, cliente, focal, destinatario, cidade, motorista, tipo_de_ocorrencia, observacoes, responsavel, status, data_abertura_manual, hora_abertura_manual, alerta_1_enviado, alerta_2_enviado, alerta_3_enviado, alerta_4_enviado, alerta_5_enviado, imagem_url"
+        # 🟢 AQUI TAMBÉM: Adicionamos 'abertura_timestamp'
+        cols = "id, numero_ticket, nota_fiscal, cliente, focal, destinatario, cidade, motorista, tipo_de_ocorrencia, observacoes, responsavel, status, data_abertura_manual, hora_abertura_manual, abertura_timestamp, alerta_1_enviado, alerta_2_enviado, alerta_3_enviado, alerta_4_enviado, alerta_5_enviado, imagem_url"
         if st.session_state.is_admin:
             response = supabase.table("ocorrencias").select(cols).eq("status", "Aberta").eq("focal", focal).order("data_hora_abertura", desc=True).execute()
         else:
@@ -453,7 +496,6 @@ def carregar_ocorrencias_por_focal(focal=None):
     except Exception as e:
         st.error(f"Erro ao carregar ocorrências por focal: {e}")
         return []
-
 def obter_focais_com_contagem():
     try:
         ocorrencias = carregar_ocorrencias_abertas() 
@@ -540,14 +582,6 @@ def finalizar_ocorrencia(ocorr, complemento, data_finalizacao_manual, hora_final
 
 def enviar_email_com_backup(destinatario, copia, assunto, corpo, imagem_url=None):
     provedores = [
-        {
-            "nome": "Resend",
-            "host": "smtp.resend.com",
-            "port": 587,
-            "username": "resend",
-            "password": "re_Pu2eoqr2_F79XHV2ca2YcP5qcHf6NNGzD",  
-            "from_email": "ClickLog Transportes <ticket@clicklogtransportes.com.br>"
-        },
         {
             "nome": "Gmail",
             "host": "smtp.gmail.com",
@@ -649,11 +683,15 @@ def carregar_regras_clientes():
         return {}
 
 def processar_envio_automatico():
-    """Verifica e envia e-mails para tickets com base nas janelas personalizadas de cada cliente."""
+    """Verifica e envia e-mails automáticos, operando em lotes controlados para evitar bloqueios de SMTP (Rate Limit)."""
     try:
         print("🔄 Iniciando processamento dinâmico de e-mails...")
         
-        cols = "id, numero_ticket, nota_fiscal, cliente, destinatario, cidade, motorista, tipo_de_ocorrencia, data_abertura_manual, hora_abertura_manual, imagem_url, status, alerta_1_enviado, alerta_2_enviado, alerta_3_enviado, alerta_4_enviado, alerta_5_enviado"
+        # 🟢 LIMITE DE SEGURANÇA (BATCHING): Máximo de 5 e-mails por ciclo de 7 minutos.
+        MAX_EMAILS_POR_CICLO = 10
+        emails_enviados_neste_ciclo = 0
+        
+        cols = "id, numero_ticket, nota_fiscal, cliente, destinatario, cidade, motorista, focal, responsavel, tipo_de_ocorrencia, data_abertura_manual, hora_abertura_manual, imagem_url, status, alerta_1_enviado, alerta_2_enviado, alerta_3_enviado, alerta_4_enviado, alerta_5_enviado"
         
         response = supabase.table("ocorrencias").select(cols).eq("status", "Aberta").execute()
         tickets = response.data
@@ -666,12 +704,22 @@ def processar_envio_automatico():
         agora = obter_data_hora_atual_brasil()
         resultados = []
 
+        # 🟢 FORÇA CHAVE MAIÚSCULA E SEM ESPAÇOS PARA GARANTIR O MATCH EXATO DO FOCAL E RESPONSÁVEL
+        usuarios_db = supabase.table("usuarios").select("nome_usuario, email").execute()
+        dict_emails_usuarios = {
+            str(u["nome_usuario"]).strip().upper(): u.get("email", "") 
+            for u in usuarios_db.data if u.get("email")
+        } if usuarios_db.data else {}
+        
+        trinta_min_atras = (agora - timedelta(minutes=30)).isoformat()
+        res_sla = supabase.table("emails_enviados").select("ticket").eq("tipo", "Alerta SLA 12h+").gte("data_hora", trinta_min_atras).execute()
+        tickets_com_sla_recente = [e["ticket"] for e in res_sla.data] if res_sla.data else []
+
         for ocorr in tickets:
-            cliente_nome = ocorr.get("cliente")
-            regra = regras_clientes.get(cliente_nome)
-            
-            if not regra or not regra["principal"]:
-                continue 
+            # 🟢 TRAVA DE SEGURANÇA: Interrompe o processo se bater o teto do lote
+            if emails_enviados_neste_ciclo >= MAX_EMAILS_POR_CICLO:
+                print(f"🛑 Fila suspensa: Limite seguro de {MAX_EMAILS_POR_CICLO} e-mails atingido neste ciclo para evitar bloqueios SMTP.")
+                break
 
             data_str = ocorr.get("data_abertura_manual")
             hora_str = ocorr.get("hora_abertura_manual")
@@ -685,17 +733,109 @@ def processar_envio_automatico():
             diferenca = agora - dt_abertura
             minutos_decorridos = diferenca.total_seconds() / 60
 
-            # Formatações exigidas para os E-mails (Ticket apenas 5 últimos e Data DD/MM/YYYY HH:MM)
             ticket_formatado = str(ocorr.get('numero_ticket', '-'))[-5:]
-            try:
-                data_abertura_formatada = datetime.strptime(data_str, "%Y-%m-%d").strftime("%d/%m/%Y")
-            except:
-                data_abertura_formatada = data_str
-            try:
-                hora_abertura_formatada = datetime.strptime(hora_str, "%H:%M:%S").strftime("%H:%M")
-            except:
-                hora_abertura_formatada = hora_str[:5] if hora_str else ""
+            try: data_abertura_formatada = datetime.strptime(data_str, "%Y-%m-%d").strftime("%d/%m/%Y")
+            except: data_abertura_formatada = data_str
+            try: hora_abertura_formatada = datetime.strptime(hora_str, "%H:%M:%S").strftime("%H:%M")
+            except: hora_abertura_formatada = hora_str[:5] if hora_str else ""
+            
+            imagem_html = f'<tr><th>Imagem</th><td><a href="{ocorr.get("imagem_url")}">Visualizar</a></td></tr>' if ocorr.get("imagem_url") else ''
 
+            # ==========================================================
+            # 1. LÓGICA DE ALERTA DE SLA INTERNO (>12 HORAS)
+            # (Repete a cada 30 min enquanto não for finalizado)
+            # ==========================================================
+            if minutos_decorridos >= 720: # 12 horas = 720 minutos
+                if ticket_formatado not in tickets_com_sla_recente:
+                    
+                    # 🟢 PADRONIZA PARA MAIÚSCULO PARA BATER COM O DICIONÁRIO
+                    focal_nome = str(ocorr.get("focal", "")).strip().upper()
+                    resp_nome = str(ocorr.get("responsavel", "")).split(" (")[0].strip().upper()
+                    
+                    email_focal = dict_emails_usuarios.get(focal_nome, "").strip()
+                    email_resp = dict_emails_usuarios.get(resp_nome, "").strip()
+                    
+                    print(f"🔍 SLA Ticket {ticket_formatado} -> Resp: '{resp_nome}' ({email_resp}) | Focal: '{focal_nome}' ({email_focal})")
+                    
+                    # 🟢 CORREÇÃO: Colocamos TODOS no campo Principal (Para:) para o SMTP não ignorar ninguém
+                    destinatarios_lista = list(set([e for e in [email_resp, email_focal] if e]))
+                    to_emails_str = ";".join(destinatarios_lista)
+                    
+                    if to_emails_str:
+                        print(f"🚨 Disparando Alerta INTERNO SLA 12h+ - Ticket {ticket_formatado} para: {to_emails_str}")
+                        assunto_sla = f"🚨 URGENTE: Considere fechar o Ticket {ticket_formatado} para manter o SLA"
+                        
+                        corpo_sla = f"""
+                        <html>
+                        <head>
+                            <style>
+                                body {{ font-family: Arial, sans-serif; font-size: 14px; color: #333; }}
+                                table {{ border-collapse: collapse; width: 100%; max-width: 600px; border: 1px solid #ddd; font-size: 13px; margin-top: 15px; }}
+                                th, td {{ border: 1px solid #ddd; padding: 5px 8px; text-align: left; }}
+                                th {{ background-color: #f2f2f2; width: 35%; color: #555; }}
+                                .header {{ background-color: #A80303; color: white; padding: 15px; max-width: 570px; border-radius: 4px 4px 0 0; text-align: center; }}
+                            </style>
+                        </head>
+                        <body>
+                            <div class="header">
+                                <h2>🚨 ALERTA CRÍTICO DE SLA (+ 12 Horas)</h2>
+                            </div>
+                            <p>Olá, equipe!</p>
+                            <p style="color: #A80303; font-weight: bold; font-size: 16px;">
+                                Considere fechar o ticket {ticket_formatado} para manter o SLA da operação.
+                            </p>
+                            <p>Este ticket está aberto há mais de <strong>{int(minutos_decorridos // 60)} horas</strong>. Por favor, considere tratar o mais breve possível.</p>
+                            
+                            <table>
+                                <tr><th>Ticket</th><td>{ticket_formatado}</td></tr>
+                                <tr><th>Cliente</th><td>{ocorr.get('cliente', '-')}</td></tr>
+                                <tr><th>Focal Responsável</th><td>{ocorr.get('focal', '-')}</td></tr>
+                                <tr><th>Nota Fiscal</th><td>{ocorr.get('nota_fiscal', '-')}</td></tr>
+                                <tr><th>Destinatário</th><td>{ocorr.get('destinatario', '-')}</td></tr>
+                                <tr><th>Cidade</th><td>{ocorr.get('cidade', '-')}</td></tr>
+                                <tr><th>Tipo de Ocorrência</th><td>{ocorr.get('tipo_de_ocorrencia', '-')}</td></tr>
+                                <tr><th>Data/Hora de Abertura</th><td>{data_abertura_formatada} {hora_abertura_formatada}</td></tr>
+                                {imagem_html}
+                            </table>
+                            <p style="font-size: 11px; color: gray; margin-top: 20px;">⚠️ E-mail automático do sistema (Envio interno estrito para Focal e Responsável. Não encaminhe ao cliente).</p>
+                        </body>
+                        </html>
+                        """
+                        
+                        # 🟢 CÓPIA VAZIA (""). Todo mundo vai no campo 'destinatario'
+                        enviou_sla, msg_sla = enviar_email(destinatario=to_emails_str, copia="", assunto=assunto_sla, corpo=corpo_sla, imagem_url=ocorr.get("imagem_url"))
+                        
+                        if enviou_sla:
+                            supabase.table("emails_enviados").insert({
+                                "data_hora": obter_data_hora_atual_brasil().isoformat(),
+                                "tipo": "Alerta SLA 12h+",
+                                "cliente": "INTERNO",
+                                "email": to_emails_str,
+                                "ticket": ticket_formatado,
+                                "nota_fiscal": ocorr.get('nota_fiscal', '-'),
+                                "status": "Enviado"
+                            }).execute()
+                            resultados.append({"cliente": "INTERNO", "ticket": ticket_formatado, "status": "sucesso", "mensagem": "Alerta SLA 12h+ enviado"})
+                            tickets_com_sla_recente.append(ticket_formatado)
+                            
+                            # Adiciona no lote para evitar bloqueio do servidor SMTP
+                            emails_enviados_neste_ciclo += 1 
+                        else:
+                            resultados.append({"cliente": "INTERNO", "ticket": ticket_formatado, "status": "erro", "mensagem": msg_sla})
+
+            # 🟢 RE-CHECA O LIMITE ANTES DE ENVIAR PARA O CLIENTE
+            if emails_enviados_neste_ciclo >= MAX_EMAILS_POR_CICLO:
+                continue
+
+            # ==========================================================
+            # 2. LÓGICA DE ALERTA DO CLIENTE (JANELAS PERSONALIZADAS)
+            # ==========================================================
+            cliente_nome = ocorr.get("cliente")
+            regra = regras_clientes.get(cliente_nome)
+            
+            if not regra or not regra["principal"]:
+                continue 
+                
             for i in range(5):
                 janela_minutos = regra["janelas"][i]
                 num_alerta = i + 1
@@ -706,8 +846,7 @@ def processar_envio_automatico():
                     print(f"📧 Disparando Alerta {num_alerta} ({janela_minutos}min) - Ticket {ticket_formatado}")
                     
                     assunto = f"Alerta de Permanência ({int(janela_minutos)} min) - Ticket {ticket_formatado}"
-                    imagem_html = f'<tr><th>Imagem</th><td><a href="{ocorr.get("imagem_url")}">Visualizar</a></td></tr>' if ocorr.get("imagem_url") else ''
-
+                    
                     corpo = f"""
                     <html>
                     <head>
@@ -756,6 +895,9 @@ def processar_envio_automatico():
                             "status": "Enviado"
                         }).execute()
                         resultados.append({"cliente": cliente_nome, "ticket": ticket_formatado, "status": "sucesso", "mensagem": f"Alerta {num_alerta} enviado"})
+                        
+                        # Adiciona no lote
+                        emails_enviados_neste_ciclo += 1 
                     else:
                         resultados.append({"cliente": cliente_nome, "ticket": ticket_formatado, "status": "erro", "mensagem": msg})
                     
@@ -861,6 +1003,7 @@ def enviar_email_finalizacao(ocorr_atualizada):
                 </table>
                 <p><strong>Complemento:</strong> {ocorr_atualizada.get('complementar', 'Sem complemento.')}</p>
                 <p>Atenciosamente,<br>Equipe de Monitoramento ClikLog Transportes</p>
+                <img src="https://vismjxhlsctehpvgmata.supabase.co/storage/v1/object/public/assets/logo.png" alt="Logo ClickLog" style="width: 150px; height: auto; margin-top: 10px;">
             </body>
             </html>
             """
@@ -937,13 +1080,13 @@ def classificar_ocorrencia_por_tempo(data_str, hora_str):
         if total_horas >= 12:
             # Calcula em qual "ciclo de 12 horas" o ticket está
             multiplo_12 = int(total_horas // 12) * 12
-            return f"🚨 ALERTA {multiplo_12}H+", "#A80303" # Fundo Vermelho Escuro
+            return f"🚨 ALERTA Aberto + de {multiplo_12}Horas", "#A80303" # Fundo Vermelho Escuro
             
         elif diferenca <= timedelta(minutes=15): return "Até 15min", "#2ecc71"  
         elif diferenca <= timedelta(minutes=30): return "15-30min", "#f39c12" 
         elif diferenca <= timedelta(minutes=45): return "30-45min", "#e344c8" 
-        elif diferenca <= timedelta(minutes=90): return "45-90min", "#750080" 
-        else: return "Acima de 90min", "#882068"  
+        elif diferenca <= timedelta(minutes=90): return "45-90min", "#B48401" 
+        else: return "Acima de 90min", "#750754"  
     except Exception:
         return "Erro", "gray"
 
@@ -995,13 +1138,15 @@ def login():
     username_cookie = cookies.get("username")
     is_admin_cookie = cookies.get("is_admin")
     expiry_time_cookie = cookies.get("expiry_time")
-    classe_cookie = cookies.get("classe")
+    cargo_cookie = cookies.get("cargo")
+    unidade_cookie = cookies.get("unidade")
 
     if login_cookie and username_cookie and not is_cookie_expired(expiry_time_cookie):
         st.session_state.login = True
         st.session_state.username = username_cookie
         st.session_state.is_admin = is_admin_cookie == "True"
-        st.session_state.classe = classe_cookie
+        st.session_state.cargo = cargo_cookie
+        st.session_state.unidade_usuario = unidade_cookie
         return
 
 
@@ -1182,30 +1327,34 @@ def login():
 
 
         if st.button("ENTRAR"):
+            # 🟢 VALIDAÇÃO ANTES DA QUERY: Impede requisições inúteis se os campos estiverem vazios
+            if not nome.strip() or not senha.strip():
+                st.warning("⚠️ Por favor, preencha o Login e a Senha antes de entrar.")
+            else:
+                with st.spinner("Autenticando..."):
+                    # 🟢 Passamos o 'nome' (que é a variável do input) para buscar o 'login_usuario'
+                    usuario = autenticar_usuario(nome.strip(), senha)
 
-            with st.spinner("Autenticando..."):
+                    if usuario:
+                        cookies["login"] = "True"
+                        cookies["username"] = usuario["nome_usuario"] # Mantemos nome_usuario para o sistema
+                        cookies["is_admin"] = str(usuario.get("is_admin", False))
+                        cookies["cargo"] = usuario.get("cargo", "")
+                        cookies["unidade"] = usuario.get("unidade", "N/A")
 
-                usuario = autenticar_usuario(nome, senha)
+                        expiry = datetime.now(timezone.utc) + timedelta(hours=24)
+                        cookies["expiry_time"] = expiry.strftime("%Y-%m-%d %H:%M:%S")
 
-                if usuario:
+                        st.session_state.login = True
+                        st.session_state.username = usuario["nome_usuario"] 
+                        st.session_state.is_admin = usuario.get("is_admin", False)
+                        st.session_state.cargo = usuario.get("cargo", "")
+                        st.session_state.unidade_usuario = usuario.get("unidade", "N/A")
 
-                    cookies["login"] = "True"
-                    cookies["username"] = usuario["nome_usuario"]
-                    cookies["is_admin"] = str(usuario.get("is_admin", False))
-                    cookies["classe"] = usuario.get("classe", "colaborador")
-
-                    expiry = datetime.now(timezone.utc) + timedelta(hours=24)
-                    cookies["expiry_time"] = expiry.strftime("%Y-%m-%d %H:%M:%S")
-
-                    st.session_state.login = True
-                    st.session_state.username = usuario["nome_usuario"]
-                    st.session_state.is_admin = usuario.get("is_admin", False)
-                    st.session_state.classe = usuario.get("classe", "colaborador")
-
-                    st.rerun()
-
-                else:
-                    st.error("Usuário ou senha incorretos")
+                        st.rerun()
+                    else:
+                        # 🟢 O erro genérico se mantém por segurança (não dizemos se foi o login ou a senha que errou)
+                        st.error("🛑 Usuário ou senha incorretos")
 
 
         st.markdown('<div class="divider">OU</div>', unsafe_allow_html=True)
@@ -1245,7 +1394,15 @@ if st.session_state.get("login", False):
     
     col_welcome_text, col_logout_button = st.columns([5, 0.5])
     with col_welcome_text:
-        st.markdown(f"👋 **Bem-vindo, {st.session_state.get('username','Usuário')}!**")
+        nome_completo = st.session_state.get('username', 'Usuário')
+        
+        # Garante que não haverá erro de IndexError se a string for vazia e formata a capitalização
+        if nome_completo and nome_completo.strip():
+            primeiro_nome = nome_completo.split()[0].capitalize()
+        else:
+            primeiro_nome = 'Usuário'
+            
+        st.markdown(f"👋 **Bem-vindo, {primeiro_nome}!**")
 
     with col_logout_button:
         if st.button("🚪 Sair"):
@@ -1383,11 +1540,15 @@ if st.session_state.get("login", False):
                 )
 
                 obs = st.text_area("Observações")
-                responsavel = st.session_state.username
-                st.text_input("Quem está abrindo o ticket", value=responsavel, disabled=True)
+                
+                responsavel = st.session_state.get("username", "")
+                cargo_responsavel = st.session_state.get("cargo", "")
+                
+                # Exibe o Nome e o Cargo concatenados na interface
+                st.text_input("Quem está abrindo o ticket", value=f"{responsavel} ({cargo_responsavel})", disabled=True)
 
-                dados_usuario = supabase.table("usuarios").select("unidade").eq("nome_usuario", responsavel).execute().data
-                unidade_usuario = dados_usuario[0]["unidade"] if dados_usuario else "N/A"
+                # Busca a unidade diretamente da sessão (Zero queries no BD)
+                unidade_usuario = st.session_state.get("unidade_usuario", "N/A")
                 st.text_input("Unidade", value=unidade_usuario, disabled=True)
 
                 # 🟢 CORREÇÃO: "Congelando" a data e hora iniciais para não atualizarem sozinhas
@@ -1423,11 +1584,35 @@ if st.session_state.get("login", False):
             if not imagem:
                 erros_abertura.append("Anexo de imagem é obrigatório para abertura de Ticket.")
 
+            
+            # --- 🟢 NOVA LÓGICA: TRAVAR DATA FUTURA NA ABERTURA ---
+            agora_real = obter_data_hora_atual_brasil()
+            data_hora_digitada_abertura = criar_datetime_manual(data_abertura_manual.strftime("%Y-%m-%d"), hora_abertura_manual.strftime("%H:%M:%S"))
+            
+            if data_hora_digitada_abertura and data_hora_digitada_abertura > agora_real + timedelta(minutes=5): # 5 min de tolerância
+                erros_abertura.append("Não é permitido abrir tickets com data ou hora no futuro.")
+            # ----------------------------------------------------
+
+            # --- 🟢 NOVA LÓGICA: CÁLCULO DE ABERTURA RETROATIVA ---
+            is_retroativo = False
+            tempo_retroativo_min = 0
+            
+            # Só considera retroativo se o atraso for maior que 5 minutos (300 segundos)
+            if data_hora_digitada_abertura and agora_real > data_hora_digitada_abertura:
+                dif_segundos = (agora_real - data_hora_digitada_abertura).total_seconds()
+                if dif_segundos > 300: 
+                    is_retroativo = True
+                    tempo_retroativo_min = int(dif_segundos // 60)
+            # ----------------------------------------------------
+
             if erros_abertura:
                 exibir_erros_aba1(erros_abertura)
             else:
                 with st.spinner("Salvando no banco de dados..."):
-                    numero_ticket = obter_data_hora_atual_brasil().strftime("%Y%m%d%H%M%S%f")
+                    # 🟢 PEGA A HORA EXATA DO CLIQUE PARA SER O TIMESTAMP "REAL"
+                    agora_real_criacao = obter_data_hora_atual_brasil()
+                    
+                    numero_ticket = agora_real_criacao.strftime("%Y%m%d%H%M%S%f")
                     data_abertura_manual_str = data_abertura_manual.strftime("%Y-%m-%d")
                     hora_abertura_manual_str = hora_abertura_manual.strftime("%H:%M:%S")
 
@@ -1438,7 +1623,10 @@ if st.session_state.get("login", False):
                         "cidade": cidade, "motorista": motorista, "tipo_de_ocorrencia": ", ".join(tipo),
                         "observacoes": obs, "responsavel": responsavel,
                         "data_abertura_manual": data_abertura_manual_str, "hora_abertura_manual": hora_abertura_manual_str,
+                        "abertura_timestamp": agora_real_criacao.isoformat(), # 🟢 AQUI: Salva a hora real de criação
                         "ticket_unidade": unidade_usuario, "complementar": "", "permanencia": "", "imagem_url": "",
+                        "abertura_retroativa": is_retroativo,         # 🟢 NOVO (Envia pro banco)
+                        "tempo_retroativo_min": tempo_retroativo_min  # 🟢 NOVO (Envia pro banco)
                     }
 
                     # Faz o upload da imagem
@@ -1468,18 +1656,16 @@ if st.session_state.get("login", False):
                 else:
                     st.error("❌ Erro ao salvar a ocorrência no banco de dados. Tente novamente.")
     # =========================
-    #     ABA 2 - EM ABERTO (COM CONTAGEM DINÂMICA)
+    #     ABA 2 - EM ABERTO 
     # =========================
     if st.session_state.aba_ativa == "aba2":
         
-        # --- 🟢 NOVO: Modal flutuante para FINALIZAR o ticket ---
         @st.dialog(" Finalizar Ocorrência")
         def dialog_finalizar_ocorrencia(ocorr):
             st.markdown(f"**Ticket #:** {str(ocorr.get('numero_ticket', '-'))[-5:]} | **Cliente:** {ocorr.get('cliente', '-')}")
             
             with st.form(f"form_fin_ocorr_{ocorr['id']}"):
                 
-                # Os campos de texto vêm PRIMEIRO para "roubar" o auto-focus e o calendário não abrir sozinho
                 complemento = st.text_input("Complementar*")
                 
                 col_m, col_o = st.columns(2)
@@ -1505,9 +1691,14 @@ if st.session_state.get("login", False):
                     if not complemento.strip():
                         st.warning("O campo Complementar é obrigatório.")
                     else:
-                        st.toast("Finalizando...")
+                        # 🟢 1. INICIA A BARRA DE PROGRESSO
+                        barra_progresso = st.progress(0, text="Iniciando a finalização...")
+                        tm.sleep(0.3) # Pausa rápida para a barra aparecer na tela
+                        
                         imagem_url_fin = ""
                         if imagem_finalizacao:
+                            # 🟢 2. ATUALIZA PARA 30% SE TIVER IMAGEM
+                            barra_progresso.progress(30, text="Fazendo upload do anexo...")
                             try:
                                 nome_arquivo = f"{ocorr['id']}_final_{limpar_nome_arquivo(imagem_finalizacao.name)}"
                                 supabase.storage.from_("imagens-finalizacao").upload(
@@ -1516,20 +1707,26 @@ if st.session_state.get("login", False):
                                 imagem_url_fin = supabase.storage.from_("imagens-finalizacao").get_public_url(nome_arquivo)
                             except: pass
 
+                        # 🟢 3. ATUALIZA PARA 60% (O TRABALHO PESADO)
+                        barra_progresso.progress(60, text="Atualizando e gerando e-mail de finalização...")
+                        
                         sucesso, mensagem = finalizar_ocorrencia(
                             ocorr, complemento, st.session_state[chave_data], st.session_state[chave_hora],
                             imagem_url_fin, observacao_final, numero_manifesto
                         )
 
                         if sucesso:
+                            # 🟢 4. COMPLETA 100% E FECHA
+                            barra_progresso.progress(100, text="✅ Concluído!")
                             st.success("Ticket finalizado com sucesso!")
                             carregar_ocorrencias_abertas.clear()
-                            tm.sleep(1)
+                            tm.sleep(1.5) # Dá 1.5s para o usuário ler o "Concluído" antes de sumir a tela
                             st.rerun()
                         else: 
+                            # Se der erro, a barra some e mostra o erro
+                            barra_progresso.empty()
                             st.error(mensagem)
 
-        # --- 🟢 NOVO: Modal flutuante para editar o ticket ---
         @st.dialog("✏️ Editar Ocorrência")
         def dialog_editar_ocorrencia(ocorr):
             st.markdown(f"**Ticket #:** {str(ocorr.get('numero_ticket', '-'))[-5:]}")
@@ -1538,7 +1735,6 @@ if st.session_state.get("login", False):
                 c1, c2 = st.columns(2)
                 
                 with c1:
-                    # Pega o responsável original (ignora se já tiver a tag de edição anterior)
                     resp_original = ocorr.get('responsavel', '').split(" (Editado")[0]
                     st.text_input("Aberto por", value=resp_original, disabled=True)
                     
@@ -1576,14 +1772,20 @@ if st.session_state.get("login", False):
                 with col_hora: nova_hora = st.time_input("Hora de Abertura", value=hr_ab)
                 
                 if st.form_submit_button("Salvar Alterações"):
+                    # --- 🟢 NOVA LÓGICA: TRAVAR DATA FUTURA NA EDIÇÃO ---
+                    agora_real_edit = obter_data_hora_atual_brasil()
+                    data_hora_digitada_edit = criar_datetime_manual(nova_data.strftime("%Y-%m-%d"), nova_hora.strftime("%H:%M:%S"))
+                    # -------------------------------------------------
+
                     if not nova_nf.isdigit():
                         st.error("Nota Fiscal deve conter apenas números.")
                     elif not novo_cli:
                         st.error("Cliente é obrigatório.")
+                    elif data_hora_digitada_edit and data_hora_digitada_edit > agora_real_edit + timedelta(minutes=5): # 🟢 NOVA CONDIÇÃO
+                        st.error("Não é permitido salvar tickets com data ou hora de abertura no futuro.")
                     else:
                         novo_focal = cliente_to_focal.get(novo_cli, "")
                         
-                        # Atualiza o responsável anexando quem editou
                         usuario_edit = st.session_state.username
                         novo_responsavel = f"{resp_original} (Editado por {usuario_edit})"
                         
@@ -1606,106 +1808,180 @@ if st.session_state.get("login", False):
                             st.rerun()
                         else:
                             st.error(msg)
-        # -------------------------------------------------------------
 
-        count = st_autorefresh(interval=60 * 1000, key="refresh_painel_aba2")
-        
-        carregar_ocorrencias_abertas.clear()
-        st.session_state.ocorrencias_abertas = carregar_ocorrencias_abertas()
 
-        agora = datetime.now()
-        if "ultima_verificacao_email" not in st.session_state:
-            st.session_state.ultima_verificacao_email = agora - timedelta(minutes=8) 
-
-        if agora - st.session_state.ultima_verificacao_email >= timedelta(minutes=7):
-            print(f"📢 [Background] Verificando e-mails automáticos em {agora.strftime('%H:%M:%S')}...")
-            
-            try:
-                resultados_notificacao = notificar_ocorrencias_abertas()
+        # ====================================================================
+        # MOTOR DE BACKGROUND (DAEMON THREAD) PARA E-MAILS
+        # ====================================================================
+        @st.cache_resource
+        def iniciar_agendador_emails():
+            """Inicia uma thread em segundo plano que roda a cada 7 minutos, independente da tela web."""
+            def run_scheduler():
+                intervalo_minutos = 7
+                intervalo_segundos = intervalo_minutos * 60
                 
-                total_enviados = sum(1 for res in resultados_notificacao if res["status"] == "sucesso")
-                if total_enviados > 0: 
-                    carregar_ocorrencias_abertas.clear()
-                    st.session_state.ocorrencias_abertas = carregar_ocorrencias_abertas()
-                    st.toast(f"✅ {total_enviados} alerta(s) de e-mail enviados em 2º plano.", icon="📧")
-                
-                st.session_state.ultima_verificacao_email = agora 
-                
-            except Exception as e:
-                print(f"❌ Erro no background job: {e}")
-
-        col_titulo, col_botao_atualizar = st.columns([5, 1]) 
-        
-        with col_botao_atualizar:
-            if st.button("🔄 Atualizar Dados", key="btn_atualizar_abertas_aba2", use_container_width=True):
-                st.rerun()
-
-        titulo_placeholder = col_titulo.empty()
-
-        if "ocorrencias_abertas" not in st.session_state:
-            st.session_state.ocorrencias_abertas = carregar_ocorrencias_abertas()
-
-        ocorrencias_abertas = st.session_state.get("ocorrencias_abertas", [])
-        
-        lista_focais = sorted(set((ocorr.get('focal') or 'Sem Focal').strip() for ocorr in ocorrencias_abertas), key=lambda x: str(x).lower())
-
-        focal_selecionado = st.selectbox("🔎 Filtrar por Focal:", options=["Todos"] + lista_focais, index=0)
-
-        if focal_selecionado != "Todos":
-            ocorrencias_filtradas = [ocorr for ocorr in ocorrencias_abertas if (ocorr.get('focal') or 'Sem Focal').strip() == focal_selecionado]
-        else:
-            ocorrencias_filtradas = ocorrencias_abertas
-
-        qtd_exibida = len(ocorrencias_filtradas)
-        titulo_placeholder.header(f"Ocorrências em Aberto ({qtd_exibida})")
-
-        if not ocorrencias_filtradas:
-            st.info("ℹ️ Nenhuma ocorrência encontrada para este filtro.")
-        else:
-            num_colunas = 4
-            colunas = st.columns(num_colunas)
-
-            for idx, ocorr in enumerate(ocorrencias_filtradas):
-                status = "Data manual ausente"
-                cor = "gray"
-                abertura_manual_formatada = "Não informada"
-                data_abertura_manual = ocorr.get("data_abertura_manual")
-                hora_abertura_manual = ocorr.get("hora_abertura_manual")
-
-                if data_abertura_manual and hora_abertura_manual:
+                while True:
+                    # Limpa a linha atual do terminal antes de printar os logs de início
+                    sys.stdout.write("\r" + " " * 80 + "\r")
+                    sys.stdout.flush()
+                    
                     try:
-                        dt_manual = criar_datetime_manual(data_abertura_manual, hora_abertura_manual)
-                        if dt_manual:
-                            abertura_manual_formatada = dt_manual.strftime("%d/%m/%Y %H:%M")
-                            status, cor = classificar_ocorrencia_por_tempo(data_abertura_manual, hora_abertura_manual)
-                        else: status = "Erro"
-                    except Exception as e: status = "Erro"
+                        # O print "Iniciando processamento..." já está dentro desta função
+                        resultados = notificar_ocorrencias_abertas()
+                        total_sucesso = sum(1 for r in resultados if r["status"] == "sucesso")
+                        if total_sucesso > 0:
+                            print(f"✅ Fim do ciclo: {total_sucesso} e-mail(s) enviado(s) com sucesso.\n")
+                        else:
+                            print(f"✅ Fim do ciclo: Nenhum envio necessário agora.\n")
+                    except Exception as e:
+                        print(f"❌ Erro crítico na thread de e-mail: {e}\n")
+                        
+                    # 🟢 MOTOR DA CONTAGEM REGRESSIVA NO TERMINAL
+                    for tempo_restante in range(intervalo_segundos, 0, -1):
+                        mins, secs = divmod(tempo_restante, 60)
+                        # O '\r' faz o cursor voltar ao início da linha para sobrescrever o texto (efeito de relógio real)
+                        sys.stdout.write(f"\r⏳ Aguardando... Próximo ciclo de e-mails em: {mins:02d}:{secs:02d} ")
+                        sys.stdout.flush()
+                        tm.sleep(1) # Aguarda 1 segundo exato
 
-                with colunas[idx % num_colunas]:
-                    safe_idx = f"{idx}_{ocorr.get('nota_fiscal', '')}"
-                    imagem_abertura_url = ocorr.get('imagem_url', '') 
-                    
-                    # 🟢 Exibir Apenas o Último Alerta Enviado e validar se podemos editar
-                    ultimo_alerta = 0
-                    email_foi_enviado = False
-                    for i in range(1, 6):
-                        if ocorr.get(f"alerta_{i}_enviado"):
-                            ultimo_alerta = i
-                            email_foi_enviado = True
-                            
-                    # --- ESTILO PREMIUM / EXECUTIVO ---
-                    bg_card = "linear-gradient(145deg, #1e1e2d, #151521)"
-                    border_color = "#2a2a3d"
-                    
-                    if ultimo_alerta > 0:
-                        alertas_html = f"<div style='background: linear-gradient(90deg, rgba(255,165,0,0.1) 0%, rgba(255,165,0,0.0) 100%); border-left: 3px solid orange; padding: 6px 10px; margin-bottom: 10px; border-radius: 4px; font-size: 0.85em;'>⚠️ <strong>Alertas:</strong> {ultimo_alerta} enviado(s)</div>"
-                    else:
-                        alertas_html = ""
+            # Inicia a thread como 'daemon' (se o servidor Streamlit cair, a thread morre junto automaticamente)
+            thread = threading.Thread(target=run_scheduler, daemon=True)
+            thread.start()
+            return thread
 
-                    link_abertura = f'<a href="{imagem_abertura_url}" target="_blank" style="text-decoration:none; color: #4facfe; font-size:0.85em; background:#4facfe20; padding:3px 10px; border-radius:12px;">📸 Ver Anexo</a>' if imagem_abertura_url else ''
-                    
-                    html_card = f"""
-<div style='background: {bg_card}; border: 1px solid {border_color}; border-top: 4px solid {cor}; padding:15px; border-radius:12px; color:#e2e2e2; box-shadow: 0 8px 16px rgba(0,0,0,0.4); margin-bottom:15px; height:520px; overflow-y:auto; font-family: "Segoe UI", Tahoma, sans-serif;'>
+        # Dispara a thread imediatamente quando o servidor for iniciado
+        iniciar_agendador_emails()
+
+
+        # ====================================================================
+        # 🟢 O NOVO MOTOR DE MONITORAMENTO (SILENCIOSO E FLUIDO)
+        # O parâmetro run_every="60s" faz apenas esse bloco rodar em loop
+        # ====================================================================
+        @st.fragment(run_every="60s")
+        def exibir_painel_de_monitoramento():
+            
+            # 1. Puxa os dados fresquinhos do banco toda vez que o ciclo roda
+            carregar_ocorrencias_abertas.clear()
+            ocorrencias_abertas = carregar_ocorrencias_abertas()
+            st.session_state.ocorrencias_abertas = ocorrencias_abertas
+
+            # 2. Renderiza o cabeçalho e os filtros
+            col_titulo, col_botao_atualizar = st.columns([5, 1]) 
+            with col_botao_atualizar:
+                if st.button("🔄 Atualizar Dados", key="btn_atualizar_abertas_aba2", use_container_width=True):
+                    st.rerun() # Força atualização imediata da tela toda se o usuário quiser
+
+            lista_focais = sorted(set((ocorr.get('focal') or 'Sem Focal').strip() for ocorr in ocorrencias_abertas), key=lambda x: str(x).lower())
+            focal_selecionado = st.selectbox("🔎 Filtrar por Focal:", options=["Todos"] + lista_focais, index=0)
+
+            if focal_selecionado != "Todos":
+                ocorrencias_filtradas = [ocorr for ocorr in ocorrencias_abertas if (ocorr.get('focal') or 'Sem Focal').strip() == focal_selecionado]
+            else:
+                ocorrencias_filtradas = ocorrencias_abertas
+
+            qtd_exibida = len(ocorrencias_filtradas)
+            
+            with col_titulo:
+                st.header(f"Ocorrências em Aberto ({qtd_exibida})")
+
+            if not ocorrencias_filtradas:
+                st.info("ℹ️ Nenhuma ocorrência encontrada para este filtro.")
+            else:
+                num_colunas = 4
+                
+                # 🟢 INJEÇÃO DA ANIMAÇÃO NEON NO LOCAL CORRETO
+                st.markdown("""
+                <style>
+                @keyframes pulse-neon-red {
+                    0% { box-shadow: 0 0 5px rgba(168, 3, 3, 0.2); border-color: #2a2a3d; }
+                    50% { box-shadow: 0 0 20px rgba(255, 0, 0, 0.8), 0 0 35px rgba(255, 0, 0, 0.5), inset 0 0 10px rgba(255, 0, 0, 0.2); border-color: #ff4444; }
+                    100% { box-shadow: 0 0 5px rgba(168, 3, 3, 0.2); border-color: #2a2a3d; }
+                }
+                .neon-critico {
+                    animation: pulse-neon-red 1.5s infinite alternate ease-in-out !important;
+                }
+                </style>
+                """, unsafe_allow_html=True)
+                
+                colunas = st.columns(num_colunas)
+
+                for idx, ocorr in enumerate(ocorrencias_filtradas):
+                    status = "Data manual ausente"
+                    cor = "gray"
+                    abertura_manual_formatada = "Não informada"
+                    data_abertura_manual = ocorr.get("data_abertura_manual")
+                    hora_abertura_manual = ocorr.get("hora_abertura_manual")
+
+                    if data_abertura_manual and hora_abertura_manual:
+                        try:
+                            dt_manual = criar_datetime_manual(data_abertura_manual, hora_abertura_manual)
+                            if dt_manual:
+                                abertura_manual_formatada = dt_manual.strftime("%d/%m/%Y %H:%M")
+                                status, cor = classificar_ocorrencia_por_tempo(data_abertura_manual, hora_abertura_manual)
+                            else: status = "Erro"
+                        except Exception as e: status = "Erro"
+
+                    with colunas[idx % num_colunas]:
+                        safe_idx = f"{idx}_{ocorr.get('nota_fiscal', '')}"
+                        imagem_abertura_url = ocorr.get('imagem_url', '') 
+                        
+                        ultimo_alerta = 0
+                        email_foi_enviado = False
+                        for i in range(1, 6):
+                            if ocorr.get(f"alerta_{i}_enviado"):
+                                ultimo_alerta = i
+                                email_foi_enviado = True
+                                
+                        # --- ESTILO PREMIUM / EXECUTIVO ---
+                        bg_card = "linear-gradient(145deg, #1e1e2d, #151521)"
+                        border_color = "#2a2a3d"
+                        
+                       # 🟢 LIGA O NEON INJETANDO DIRETO NO STYLE PARA O STREAMLIT NÃO BLOQUEAR
+                        if "ALERTA" in status:
+                            estilo_dinamico = "animation: pulse-neon-red 1.2s infinite alternate ease-in-out;"
+                        else:
+                            estilo_dinamico = f"border: 1px solid {border_color}; box-shadow: 0 8px 16px rgba(0,0,0,0.4);"
+                        
+                        if ultimo_alerta > 0:
+                            alertas_html = f"<div style='background: linear-gradient(90deg, rgba(255,165,0,0.1) 0%, rgba(255,165,0,0.0) 100%); border-left: 3px solid orange; padding: 6px 10px; margin-bottom: 10px; border-radius: 4px; font-size: 0.85em;'>⚠️ <strong>Alertas:</strong> {ultimo_alerta} enviado(s)</div>"
+                        else:
+                            alertas_html = ""
+
+                        link_abertura = f'<a href="{imagem_abertura_url}" target="_blank" style="text-decoration:none; color: #4facfe; font-size:0.85em; background:#4facfe20; padding:3px 10px; border-radius:12px;">📸 Ver Anexo</a>' if imagem_abertura_url else ''
+
+                  
+                        # --- 🟢 LÓGICA DO INDICADOR RETROATIVO "PEGA MALANDRO" ---
+                        flag_retroativo_html = ""
+                        try:
+                            # Tentamos buscar o timestamp de criação que agora reflete a verdade
+                            if "abertura_timestamp" in ocorr and ocorr["abertura_timestamp"]:
+                                dt_real = datetime.fromisoformat(ocorr["abertura_timestamp"])
+                                if dt_real.tzinfo is None:
+                                    dt_real = dt_real.replace(tzinfo=timezone.utc).astimezone(FUSO_HORARIO_BRASIL)
+                                else:
+                                    dt_real = dt_real.astimezone(FUSO_HORARIO_BRASIL)
+                                
+                                dt_manual = criar_datetime_manual(ocorr.get("data_abertura_manual", ""), ocorr.get("hora_abertura_manual", ""))
+                                
+                                if dt_real and dt_manual:
+                                    # Se a diferença de criação for de mais de 5 minutos
+                                    diferenca = (dt_real - dt_manual).total_seconds()
+                                    if diferenca > 300: 
+                                        diff_horas = int(diferenca // 3600)
+                                        diff_minutos = int((diferenca % 3600) // 60)
+                                        tempo_atraso_str = f"{diff_horas}h {diff_minutos}m" if diff_horas > 0 else f"{diff_minutos}m"
+                                        
+                                        # 🟢 EXTRAI A HORA REAL FORMATADA
+                                        hora_real_str = dt_real.strftime("%H:%M")
+                                        
+                                        # 🟢 ADICIONA A HORA REAL NO TEXTO DA TAG
+                                        flag_retroativo_html = f"<div style='margin-top: 10px; font-size: 0.75em; color: #f39c12; background: #3b2a00; border: 1px solid #755500; padding: 4px; border-radius: 4px; text-align: center;'>⚠️ Aberto Retroativamente {tempo_atraso_str} | Hora Real: {hora_real_str}</div>"
+                        except Exception as e:
+                            pass
+                        # --------------------------------------------------------
+                        
+                        html_card = f"""
+<div style='background: {bg_card}; border-top: 4px solid {cor}; padding:15px; border-radius:12px; color:#e2e2e2; margin-bottom:15px; height:560px; overflow-y:auto; font-family: "Segoe UI", Tahoma, sans-serif; {estilo_dinamico}'>
 <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px;'>
 <div style='font-size: 1.15em; font-weight: 600; color: #ffffff;'>Ticket #{str(ocorr.get('numero_ticket', 'N/A'))[-5:]}</div>
 <div style='background-color: {cor}; color: #ffffff; padding: 3px 10px; border-radius: 20px; font-size: 0.75em; font-weight: bold;'>{status}</div>
@@ -1749,21 +2025,24 @@ if st.session_state.get("login", False):
 <div style='margin-top: 10px; font-size: 0.85em; color: #a0a0b0;'>
 <strong>Obs:</strong> {seguro(ocorr.get('observacoes', ''))}
 </div>
+{flag_retroativo_html}
 </div>
 """
-                    st.markdown(html_card, unsafe_allow_html=True)
+                        st.markdown(html_card, unsafe_allow_html=True)
 
-                    # 🟢 Botões de Ação Simplificados (Agora usando Dialogs)
-                    c_btn1, c_btn2 = st.columns(2)
-                    with c_btn1:
-                        if st.button(" Finalizar", key=f"btn_fin_{safe_idx}", use_container_width=True):
-                            dialog_finalizar_ocorrencia(ocorr)
-                    with c_btn2:
-                        if email_foi_enviado:
-                            st.button("✏️ Editar", key=f"btn_edit_{safe_idx}", disabled=True, help="Bloqueado: O primeiro alerta já foi enviado.", use_container_width=True)
-                        else:
-                            if st.button("✏️ Editar", key=f"btn_edit_{safe_idx}", use_container_width=True):
-                                dialog_editar_ocorrencia(ocorr)
+                        c_btn1, c_btn2 = st.columns(2)
+                        with c_btn1:
+                            if st.button(" Finalizar", key=f"btn_fin_{safe_idx}", use_container_width=True):
+                                dialog_finalizar_ocorrencia(ocorr)
+                        with c_btn2:
+                            if email_foi_enviado:
+                                st.button("✏️ Editar", key=f"btn_edit_{safe_idx}", disabled=True, help="Bloqueado: O primeiro alerta já foi enviado.", use_container_width=True)
+                            else:
+                                if st.button("✏️ Editar", key=f"btn_edit_{safe_idx}", use_container_width=True):
+                                    dialog_editar_ocorrencia(ocorr)
+
+        # 🟢 Executa o painel na tela
+        exibir_painel_de_monitoramento()
 
 
     # =========================
@@ -1996,6 +2275,7 @@ if st.session_state.get("login", False):
                         else: st.error("❌ Usuário não encontrado.")
                     except Exception as e: st.error(f"❌ Erro ao alterar senha: {e}")
         
+        # 🟢 AQUI: Verificação corrigida para painel do Admin
         if st.session_state.is_admin:
             st.subheader("Administração de Usuários")
             admin_tab1, admin_tab2, admin_tab3 = st.tabs(["Listar Usuários", "Adicionar Usuário", "Editar/Excluir Usuário"])
@@ -2007,26 +2287,46 @@ if st.session_state.get("login", False):
                         usuarios = response.data
                         df_usuarios = pd.DataFrame([
                             {
-                                "Nome de Usuário": u["nome_usuario"],
+                                "Nome Completo": u["nome_usuario"],
+                                "Login": u.get("login_usuario", "-") or "-",
+                                "CPF": mascarar_cpf_lgpd(u.get("cpf_usuario", "-")),
+                                "Cargo": u.get("cargo", "-") or "-",
+                                "E-mail": u.get("email", "-") or "-",
+                                "Telefone": u.get("telefone", "-") or "-",
+                                "Unidade": u.get("unidade", "Não definido") or "Não definido",
                                 "Admin": "Sim" if u.get("is_admin", False) else "Não",
-                                "Unidade": u.get("unidade", "Não definido"),
-                                "Último Login": u.get("ultimo_login", "-")
+                                "Último Login": u.get("ultimo_login", "-") or "-"
                             }
                             for u in usuarios
                         ])
-                        st.dataframe(df_usuarios)
-                    else: st.info("Nenhum usuário encontrado.")
-                except Exception as e: st.error(f"Erro ao listar usuários: {e}")
+                        st.dataframe(df_usuarios, use_container_width=True, hide_index=True)
+                    else: 
+                        st.info("Nenhum usuário encontrado.")
+                except Exception as e: 
+                    st.error(f"Erro ao listar usuários: {e}")
             
             with admin_tab2:
-                with st.form("form_adicionar_usuario"):
-                    novo_usuario = st.text_input("Nome de Usuário")
-                    nova_senha_usuario = st.text_input("Senha", type="password")
-                    confirmar_senha_usuario = st.text_input("Confirmar Senha", type="password")
+                if "form_user_id" not in st.session_state:
+                    st.session_state.form_user_id = 0
+
+                with st.form(f"form_adicionar_usuario_{st.session_state.form_user_id}", clear_on_submit=False):
+                    col_u1, col_u2 = st.columns(2)
+                    with col_u1:
+                        novo_usuario = st.text_input("Nome Completo*")
+                        novo_login = st.text_input("Login de Acesso*")
+                        cpf_novo = st.text_input("CPF (apenas números)*", max_chars=14) 
+                        email_usuario = st.text_input("E-mail corporativo*").lower() # 🟢 Força minúsculo
+                        telefone_usuario = st.text_input("Telefone com DDD (apenas números)*", placeholder="Ex: 51999999999", max_chars=11)
+                    with col_u2:
+                        opcoes_cargos = ["Diretor(a)", "Coordenador(a)", "Gerente", "Supervisor(a)", "Analista Monitoramento", "Focal"]
+                        cargo_usuario = st.selectbox("Cargo/Função*", options=opcoes_cargos, index=None)
+                        nova_senha_usuario = st.text_input("Senha*", type="password")
+                        confirmar_senha_usuario = st.text_input("Confirmar Senha*", type="password")
+
                     is_admin = st.checkbox("Usuário Administrador")
 
                     if st.session_state.is_admin: 
-                        unidade_novo_usuario = st.selectbox("Unidade", lista_filiais)
+                        unidade_novo_usuario = st.selectbox("Unidade*", lista_filiais)
                     else:
                         dados_usuario = supabase.table("usuarios").select("unidade").eq("nome_usuario", st.session_state.username).execute().data
                         unidade_novo_usuario = dados_usuario[0]["unidade"] if dados_usuario else "N/A"
@@ -2035,46 +2335,111 @@ if st.session_state.get("login", False):
                     adicionar_usuario = st.form_submit_button("Adicionar Usuário")
 
                     if adicionar_usuario:
-                        if not novo_usuario or not nova_senha_usuario or not confirmar_senha_usuario:
-                            st.error("❌ Todos os campos são obrigatórios.")
-                        elif nova_senha_usuario != confirmar_senha_usuario:
-                            st.error("❌ As senhas não coincidem.")
+                        erros_usr = []
+                        if not novo_usuario or not novo_login or not cpf_novo or not nova_senha_usuario or not confirmar_senha_usuario or not email_usuario or not telefone_usuario or not cargo_usuario:
+                            erros_usr.append("Todos os campos marcados com * são obrigatórios.")
+                        if nova_senha_usuario != confirmar_senha_usuario:
+                            erros_usr.append("As senhas não coincidem.")
+                        if not validar_email(email_usuario):
+                            erros_usr.append("Formato de e-mail inválido.")
+                        if not validar_telefone(telefone_usuario):
+                            erros_usr.append("Telefone inválido. Exige 10 ou 11 dígitos numéricos.")
+                        if not validar_cpf(cpf_novo):
+                            erros_usr.append("CPF inválido. Exige 11 dígitos numéricos válidos.")
+
+                        if erros_usr:
+                            for erro in erros_usr: st.error(f"❌ {erro}")
                         else:
                             try:
-                                check_response = supabase.table("usuarios").select("*").eq("nome_usuario", novo_usuario).execute()
-                                if check_response.data: st.error("❌ Nome de usuário já existe.")
+                                cpf_limpo = re.sub(r'[^0-9]', '', cpf_novo)
+                                login_tratado = novo_login.lower().strip()
+                                
+                                check_login = supabase.table("usuarios").select("id").eq("login_usuario", login_tratado).execute()
+                                check_cpf = supabase.table("usuarios").select("id").eq("cpf_usuario", formatar_cpf(cpf_limpo)).execute()
+                                
+                                if check_login.data: 
+                                    st.error("❌ Este login de acesso já está em uso.")
+                                elif check_cpf.data:
+                                    st.error("❌ Este CPF já está cadastrado no sistema.")
                                 else:
                                     senha_hash = hash_senha(nova_senha_usuario)
+                                    tel_limpo = re.sub(r'[^0-9]', '', telefone_usuario)
+                                    
                                     insert_response = supabase.table("usuarios").insert({
-                                        "nome_usuario": novo_usuario, "senha_hash": senha_hash,
-                                        "is_admin": is_admin, "unidade": unidade_novo_usuario,
+                                        "nome_usuario": novo_usuario,
+                                        "login_usuario": login_tratado,
+                                        "cpf_usuario": formatar_cpf(cpf_limpo), 
+                                        "senha_hash": senha_hash,
+                                        "email": email_usuario.lower().strip(),
+                                        "telefone": tel_limpo,
+                                        "cargo": cargo_usuario,
+                                        "is_admin": is_admin, 
+                                        "unidade": unidade_novo_usuario,
                                         "criado_em": obter_data_hora_atual_brasil().isoformat()
                                     }).execute()
 
                                     if insert_response.data:
                                         st.success("✅ Usuário adicionado com sucesso!")
+                                        carregar_focal_supabase.clear() 
+                                        st.session_state.form_user_id += 1 
                                         tm.sleep(1.5)
-                                    else: st.error("❌ Erro ao adicionar usuário.")
-                            except Exception as e: st.error(f"❌ Erro ao adicionar usuário: {e}")
+                                        st.rerun()
+                                    else: 
+                                        st.error("❌ Erro ao adicionar usuário.")
+                            except Exception as e: 
+                                st.error(f"❌ Erro ao adicionar usuário: {e}")
             
             with admin_tab3:
                 try:
                     response = supabase.table("usuarios").select("*").execute()
                     if response.data:
                         usuarios = response.data
-                        nomes_usuarios = [u["nome_usuario"] for u in usuarios]
-                        usuario_selecionado = st.selectbox("Selecione um usuário", nomes_usuarios)
+                        
+                        # 🟢 CORREÇÃO: Ignora registros com nome vazio (None) e garante que são strings
+                        nomes_usuarios = sorted([str(u["nome_usuario"]) for u in usuarios if u.get("nome_usuario")])
+                        
+                        # 🟢 CORREÇÃO 1: index=None faz o selectbox começar vazio
+                        usuario_selecionado = st.selectbox(
+                            "Selecione um usuário para editar", 
+                            options=nomes_usuarios, 
+                            index=None, 
+                            placeholder="Selecionar..."
+                        )
                         
                         if usuario_selecionado:
                             usuario_data = next((u for u in usuarios if u["nome_usuario"] == usuario_selecionado), None)
                             if usuario_data:
                                 with st.form("form_editar_usuario"):
-                                    nova_senha_admin = st.text_input("Nova Senha (deixe em branco para não alterar)", type="password")
+                                    st.markdown(f"**Editando Usuário:** {usuario_data['nome_usuario']}")
+                                    
+                                    c_ed1, c_ed2 = st.columns(2)
+                                    with c_ed1:
+                                        # 🟢 CORREÇÃO 2: Adicionado .upper() para forçar maiúscula na edição
+                                        nome_edit = st.text_input("Nome Completo*", value=usuario_data.get("nome_usuario", "") or "").upper()
+                                        
+                                        login_banco = usuario_data.get("login_usuario", "")
+                                        login_edit = st.text_input("Login de Acesso*", value=login_banco if login_banco else "").lower()
+                                        
+                                        cpf_banco = usuario_data.get("cpf_usuario", "")
+                                        cpf_raw = re.sub(r'[^0-9]', '', cpf_banco) if cpf_banco else ""
+                                        cpf_edit = st.text_input("CPF (apenas números)*", value=cpf_raw, max_chars=14)
+                                        
+                                        email_banco = usuario_data.get("email", "")
+                                        email_edit = st.text_input("E-mail*", value=email_banco if email_banco else "").lower() # 🟢 Força minúsculo
+                                        
+                                        telefone_banco = usuario_data.get("telefone", "")
+                                        telefone_edit = st.text_input("Telefone (apenas números)*", value=telefone_banco if telefone_banco else "", max_chars=11)
+                                        
+                                    with c_ed2:
+                                        opcoes_cargos = ["Diretor(a)", "Coordenador(a)", "Gerente", "Supervisor(a)", "Analista Monitoramento", "Focal"]
+                                        cargo_atual = usuario_data.get("cargo", "")
+                                        idx_cargo = opcoes_cargos.index(cargo_atual) if cargo_atual in opcoes_cargos else None
+                                        cargo_edit = st.selectbox("Cargo/Função*", options=opcoes_cargos, index=idx_cargo)
+                                        nova_senha_admin = st.text_input("Nova Senha (deixe em branco para não alterar)", type="password")
+                                        
                                     is_admin_edit = st.checkbox("Usuário Administrador", value=usuario_data.get("is_admin", False))
                                     
-                                    # --- 🟢 NOVO: Permite editar a filial puxando da tabela dinâmica ---
                                     unidade_atual = usuario_data.get("unidade", "")
-                                    # Descobre a posição da unidade atual na lista (ou deixa 0 se não achar)
                                     idx_unidade = lista_filiais.index(unidade_atual) if unidade_atual in lista_filiais else 0
                                     
                                     if st.session_state.is_admin:
@@ -2082,47 +2447,92 @@ if st.session_state.get("login", False):
                                     else:
                                         nova_unidade_edit = unidade_atual
                                         st.text_input("Unidade", value=nova_unidade_edit, disabled=True)
-                                    # -------------------------------------------------------------------
 
                                     col1, col2 = st.columns(2)
-                                    with col1: editar_usuario = st.form_submit_button("Atualizar Usuário")
-                                    with col2: excluir_usuario = st.form_submit_button("Excluir Usuário", type="primary")
+                                    with col1: 
+                                        editar_usuario = st.form_submit_button("Atualizar Usuário")
+                                    with col2: 
+                                        excluir_usuario = st.form_submit_button("Excluir Usuário", type="primary")
                                     
                                     if editar_usuario:
-                                        try:
-                                            # Inclui a nova unidade no pacote de atualização
-                                            update_data = {
-                                                "is_admin": is_admin_edit,
-                                                "unidade": nova_unidade_edit
-                                            }
-                                            if nova_senha_admin: 
-                                                update_data["senha_hash"] = hash_senha(nova_senha_admin)
-                                                
-                                            update_response = supabase.table("usuarios").update(update_data).eq("nome_usuario", usuario_selecionado).execute()
+                                        erros_upd = []
+                                        if not nome_edit or not login_edit or not cpf_edit or not email_edit or not telefone_edit or not cargo_edit:
+                                            erros_upd.append("Nome, Login, CPF, E-mail, Telefone e Cargo são obrigatórios.")
                                             
-                                            if update_response.data: 
-                                                st.success("✅ Usuário atualizado com sucesso!")
-                                                tm.sleep(1)
-                                                st.rerun()
-                                            else: 
-                                                st.error("❌ Erro ao atualizar usuário.")
-                                        except Exception as e: 
-                                            st.error(f"❌ Erro ao atualizar usuário: {e}")
+                                        # 🟢 VALIDAÇÃO DE REGEX NA EDIÇÃO (Mantida e correta)
+                                        if nome_edit and not re.match(r'^[A-Z\s]+$', nome_edit):
+                                            erros_upd.append("O Nome deve conter apenas letras (sem acentos) e espaços.")
+                                            
+                                        if not validar_email(email_edit):
+                                            erros_upd.append("Formato de e-mail inválido.")
+                                        if not validar_telefone(telefone_edit):
+                                            erros_upd.append("Telefone inválido. Exige 10 ou 11 dígitos numéricos.")
+                                        if not validar_cpf(cpf_edit):
+                                            erros_upd.append("CPF inválido. Exige 11 dígitos numéricos válidos.")
+
+                                        if erros_upd:
+                                            for erro in erros_upd: st.error(f"❌ {erro}")
+                                        else:
+                                            try:
+                                                cpf_limpo_ed = re.sub(r'[^0-9]', '', cpf_edit)
+                                                tel_limpo_ed = re.sub(r'[^0-9]', '', telefone_edit)
+                                                login_tratado_ed = login_edit.lower().strip()
+                                                
+                                                check_cpf_upd = supabase.table("usuarios").select("id").eq("cpf_usuario", formatar_cpf(cpf_limpo_ed)).neq("id", usuario_data["id"]).execute()
+                                                if check_cpf_upd.data:
+                                                    st.error("❌ Este CPF já está atrelado a outro usuário no sistema.")
+                                                else:
+                                                    update_data = {
+                                                        "nome_usuario": nome_edit, 
+                                                        "login_usuario": login_tratado_ed,
+                                                        "cpf_usuario": formatar_cpf(cpf_limpo_ed),
+                                                        "email": email_edit.lower().strip(),
+                                                        "telefone": tel_limpo_ed,
+                                                        "cargo": cargo_edit,
+                                                        "is_admin": is_admin_edit,
+                                                        "unidade": nova_unidade_edit
+                                                    }
+                                                    if nova_senha_admin: 
+                                                        update_data["senha_hash"] = hash_senha(nova_senha_admin)
+                                                    
+                                                    update_response = supabase.table("usuarios").update(update_data).eq("id", usuario_data["id"]).execute() 
+                                                    
+                                                    if update_response.data: 
+                                                        st.success("✅ Usuário atualizado com sucesso!")
+                                                        carregar_focal_supabase.clear()
+                                                        tm.sleep(1)
+                                                        st.rerun()
+                                                    else: 
+                                                        st.error("❌ Erro ao atualizar usuário.")
+                                            except Exception as e: 
+                                                st.error(f"❌ Erro ao atualizar usuário: {e}")
                                     
                                     if excluir_usuario:
-                                        if usuario_selecionado == st.session_state.username:
+                                        if usuario_data["nome_usuario"] == st.session_state.username:
                                             st.error("❌ Você não pode excluir seu próprio usuário.")
                                         else:
                                             try:
-                                                delete_response = supabase.table("usuarios").delete().eq("nome_usuario", usuario_selecionado).execute()
+                                                delete_response = supabase.table("usuarios").delete().eq("id", usuario_data["id"]).execute()
                                                 if delete_response.data:
                                                     st.success("✅ Usuário excluído com sucesso!")
+                                                    carregar_focal_supabase.clear() 
                                                     tm.sleep(1)
                                                     st.rerun()
                                                 else: st.error("❌ Erro ao excluir usuário.")
                                             except Exception as e: st.error(f"❌ Erro ao excluir usuário: {e}")
                     else: st.info("Nenhum usuário encontrado.")
                 except Exception as e: st.error(f"Erro ao carregar usuários: {e}")
+
+        # ====================================================================
+        # 🟢 EXECUÇÃO DE MODAIS TARDIOS (EVITA O ERRO "Only one dialog")
+        # ====================================================================
+        if st.session_state.get("login", False) and disparar_alerta_agora:
+            from streamlit.errors import StreamlitAPIException
+            try:
+                dialog_alerta_12h(tickets_estourados)
+                st.session_state.ultima_exibicao_alerta_12h = datetime.now() 
+            except StreamlitAPIException:
+                pass
 
     # =========================
     #     ABA 6 - NOTIFICAÇÕES POR E-MAIL (APENAS ADMIN)
@@ -2445,7 +2855,12 @@ if st.session_state.get("login", False):
             st.markdown("---")
 
             if opcao_gerencia == "➕ Cadastrar Novo":
-                with st.form("form_novo_cli", clear_on_submit=True):
+                
+                # 🟢 MÁGICA DO RESET: Controlador dinâmico para Clientes
+                if "form_cli_id" not in st.session_state:
+                    st.session_state.form_cli_id = 0
+
+                with st.form(f"form_novo_cli_{st.session_state.form_cli_id}", clear_on_submit=False):
                     st.markdown("##### Dados do Cliente")
                     col_n1, col_n2 = st.columns(2)
                     with col_n1:
@@ -2476,7 +2891,6 @@ if st.session_state.get("login", False):
                         elif not validar_nome_cliente(nome): 
                             erros.append("Nome deve conter apenas letras MAIÚSCULAS, sem acentos, sem 'Ç' e sem caracteres especiais.")
                         else:
-                            # 🟢 NOVO: Checa no banco se o NOME já existe para jogar no Dialog
                             check_nome = supabase.table("clientes").select("id").eq("cliente", nome).execute()
                             if check_nome.data:
                                 erros.append(f"O cliente '{nome}' já está cadastrado no sistema.")
@@ -2488,7 +2902,6 @@ if st.session_state.get("login", False):
                         elif len(cnpj_limpo) != 14: 
                             erros.append("CNPJ inválido. Digite exatamente 14 números.")
                         else:
-                            # 🟢 NOVO: Checa no banco se o CNPJ já existe para jogar no Dialog
                             check_cnpj = supabase.table("clientes").select("id").eq("cnpj", cnpj_limpo).execute()
                             if check_cnpj.data: 
                                 erros.append(f"O CNPJ '{cnpj_limpo}' já está vinculado a outro cliente.")
@@ -2502,13 +2915,14 @@ if st.session_state.get("login", False):
                         if not email_c: erros.append("É obrigatório informar ao menos um E-mail em Cópia.")
                         elif not validar_emails_multiplos(email_c): erros.append("Formato de um ou mais E-mails em Cópia inválido.")
                         
-                        # Dispara Modal de Erro se houver algum
                         if erros:
                             exibir_erros_dialog(erros)
                         else:
                             suc, msg = inserir_cliente(nome, focal, rec_email, email_p, email_c, cnpj_limpo, j1, j2, j3, j4, j5)
                             if suc:
                                 carregar_clientes_supabase.clear()
+                                # 🟢 O PULO DO GATO AQUI TAMBÉM: Atualiza o ID do cliente
+                                st.session_state.form_cli_id += 1
                                 exibir_sucesso_dialog(msg)
                             else: 
                                 st.error(msg)
@@ -2536,6 +2950,12 @@ if st.session_state.get("login", False):
                                 n_cnpj = st.text_input("CNPJ*", value=str(dados.get("cnpj", "") if pd.notna(dados.get("cnpj")) else ""))
                                 
                                 focal_atual = dados.get("focal", "")
+                                
+                                # 🟢 PROTEÇÃO LEGADA: Se o focal antigo não estiver na lista de usuários Focais, 
+                                # nós o injetamos temporariamente na lista da tela para não perder a referência.
+                                if focal_atual and focal_atual not in lista_focais_disp:
+                                    lista_focais_disp.append(focal_atual)
+                                    
                                 idx_f = lista_focais_disp.index(focal_atual) if focal_atual in lista_focais_disp else 0
                                 novo_focal = st.selectbox("Focal*", options=lista_focais_disp, index=idx_f)
                                 novo_rec = st.checkbox("Cliente irá Receber E-mail de Notificação?", value=bool(dados.get("receber_emails")))
