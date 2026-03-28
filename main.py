@@ -138,15 +138,22 @@ def criar_datetime_manual(data_str, hora_str):
 
 def autenticar_usuario(login_usuario, senha):
     try:
-        # 🟢 AQUI: Busca pelo login_usuario em vez do nome_usuario
-        dados = supabase.table("usuarios").select("*").eq("login_usuario", login_usuario).execute()
+        # Busca no banco filtrando pela coluna correta: login_usuario
+        # Garante tratamento de maiúscula/minúscula (tudo minúsculo para login)
+        login_tratado = str(login_usuario).lower().strip()
+        dados = supabase.table("usuarios").select("*").eq("login_usuario", login_tratado).execute()
+        
         if dados.data:
             usuario = dados.data[0]
+            # Verifica se a senha confere com o hash salvo no banco
             if verificar_senha(senha, usuario["senha_hash"]):
                 st.success("✅ Logado com sucesso!")
                 return usuario
+                
+        # Se os dados vierem vazios (login não existe) ou a senha estiver incorreta
         st.error("🛑 Usuário ou senha incorretos.")
         return None
+        
     except Exception as e:
         st.error(f"Erro ao autenticar: {e}")
         return None
@@ -1135,7 +1142,7 @@ def carregar_ocorrencias_finalizadas(data_inicio_str, data_fim_str):
 def login():
 
     login_cookie = cookies.get("login")
-    username_cookie = cookies.get("username")
+    username_cookie = cookies.get("username") # Este continuará sendo o Nome Completo para uso interno
     is_admin_cookie = cookies.get("is_admin")
     expiry_time_cookie = cookies.get("expiry_time")
     cargo_cookie = cookies.get("cargo")
@@ -1304,7 +1311,7 @@ def login():
         nome = st.text_input(
             "Login",
             key="login_username",
-            placeholder="Digite seu Usuário"
+            placeholder="Digite seu Login de Acesso" # 🟢 Mudei o placeholder para orientar o usuário
         )
 
         senha = st.text_input(
@@ -1325,19 +1332,18 @@ def login():
                 unsafe_allow_html=True
             )
 
-
         if st.button("ENTRAR"):
-            # 🟢 VALIDAÇÃO ANTES DA QUERY: Impede requisições inúteis se os campos estiverem vazios
             if not nome.strip() or not senha.strip():
                 st.warning("⚠️ Por favor, preencha o Login e a Senha antes de entrar.")
             else:
                 with st.spinner("Autenticando..."):
-                    # 🟢 Passamos o 'nome' (que é a variável do input) para buscar o 'login_usuario'
+                    # 🟢 Aqui ele chama a função nova
                     usuario = autenticar_usuario(nome.strip(), senha)
 
                     if usuario:
                         cookies["login"] = "True"
-                        cookies["username"] = usuario["nome_usuario"] # Mantemos nome_usuario para o sistema
+                        # 🟢 SALVA O NOME COMPLETO no cookie e na sessão, não o login curto!
+                        cookies["username"] = usuario.get("nome_usuario", "") 
                         cookies["is_admin"] = str(usuario.get("is_admin", False))
                         cookies["cargo"] = usuario.get("cargo", "")
                         cookies["unidade"] = usuario.get("unidade", "N/A")
@@ -1346,16 +1352,14 @@ def login():
                         cookies["expiry_time"] = expiry.strftime("%Y-%m-%d %H:%M:%S")
 
                         st.session_state.login = True
-                        st.session_state.username = usuario["nome_usuario"] 
+                        # 🟢 SALVA O NOME COMPLETO na sessão, pois é ele que vai pro BD na hora de abrir/fechar ticket
+                        st.session_state.username = usuario.get("nome_usuario", "") 
                         st.session_state.is_admin = usuario.get("is_admin", False)
                         st.session_state.cargo = usuario.get("cargo", "")
                         st.session_state.unidade_usuario = usuario.get("unidade", "N/A")
 
                         st.rerun()
-                    else:
-                        # 🟢 O erro genérico se mantém por segurança (não dizemos se foi o login ou a senha que errou)
-                        st.error("🛑 Usuário ou senha incorretos")
-
+                    # 🟢 O bloco "else:" do erro genérico sumiu daqui porque a função autenticar_usuario() já faz o st.error() lá em cima!
 
         st.markdown('<div class="divider">OU</div>', unsafe_allow_html=True)
 
