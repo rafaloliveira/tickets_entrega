@@ -40,16 +40,22 @@ load_dotenv()
 # 1. CONFIGURAÇÕES GLOBAIS E CHAVES (EMAIL, SUPABASE, FUSO HORÁRIO)
 # ====================================================================
 
-# --- CONFIGURAÇÕES DE E-MAIL (AGORA COM RESEND) ---
+# --- CONFIGURAÇÕES DE E-MAIL (GMAIL) ---
 EMAIL_REMETENTE = "ticket@clicklogtransportes.com.br" 
 
-# Credenciais do Resend
-SMTP_USERNAME = "resend" 
-SMTP_PASSWORD = "re_Pu2eoqr2_F79XHV2ca2YcP5qcHf6NNGzD" # <--- SUA CHAVE API DO RESEND AQUI
-SMTP_HOST = "smtp.resend.com" 
+SMTP_USERNAME = "ticketclicklogtransportes@gmail.com"
+SMTP_PASSWORD = "gpbh tjyq wyvi jibs" 
+SMTP_HOST = "smtp.gmail.com" 
 SMTP_PORT = 587 
 
 socket.setdefaulttimeout(30) 
+
+# --- CONFIGURAÇÕES WHATSAPP (Z-API) ---
+ZAPI_INSTANCE_ID = "3F305973A09E22CB364CC29C8E5C7514" 
+ZAPI_TOKEN = "D4D400143DCF2758BF26E843"             
+
+# Atenção aqui abaixo:
+ZAPI_CLIENT_TOKEN = "Fd79bac97fb564ebd88ac647c5615812fS"
 
 # --- DEFINIÇÃO DO FUSO HORÁRIO BRASILEIRO ---
 FUSO_HORARIO_BRASIL = pytz.timezone("America/Sao_Paulo")
@@ -382,7 +388,7 @@ def inserir_cidade(cidade):
     except Exception as e:
         return False, f"Erro ao cadastrar cidade: {e}"
 
-def inserir_cliente(novo_cliente, focal, receber_emails, email_principal, email_copia, cnpj, j1, j2, j3, j4, j5):
+def inserir_cliente(novo_cliente, focal, receber_emails, email_principal, email_copia, cnpj, j1, j2, j3, j4, j5, whats1="", whats2=""):
     try:
         # Verifica duplicidade de Nome
         check_nome = supabase.table("clientes").select("cliente").eq("cliente", novo_cliente).execute()
@@ -396,12 +402,18 @@ def inserir_cliente(novo_cliente, focal, receber_emails, email_principal, email_
             if check_cnpj.data and len(check_cnpj.data) > 0:
                 return False, f"O CNPJ '{cnpj_numeros}' já está vinculado a outro cliente no sistema."
 
+        # Limpa os números de WhatsApp
+        w1_limpo = re.sub(r'[^0-9]', '', whats1) if whats1 else None
+        w2_limpo = re.sub(r'[^0-9]', '', whats2) if whats2 else None
+
         dados = {
             "cliente": novo_cliente,
             "focal": focal,
             "receber_emails": receber_emails,
             "enviar_para_email": email_principal.lower(), # Força minúsculo no banco
             "email_copia": email_copia.lower() if email_copia else "", # Força minúsculo no banco
+            "whatsapp_1": w1_limpo,
+            "whatsapp_2": w2_limpo,
             "cnpj": cnpj_numeros,
             "janela_1": j1 if j1 > 0 else None,
             "janela_2": j2 if j2 > 0 else None,
@@ -666,28 +678,80 @@ def enviar_email(destinatario, copia, assunto, corpo, imagem_url=None):
 
 
 def carregar_regras_clientes():
-    """Carrega os e-mails e as janelas de notificação personalizadas de todos os clientes."""
+    """Carrega os e-mails, whatsapps e as janelas de notificação personalizadas de todos os clientes."""
     try:
-        response = supabase.table("clientes").select("cliente, enviar_para_email, email_copia, janela_1, janela_2, janela_3, janela_4, janela_5").execute()
+        response = supabase.table("clientes").select("cliente, enviar_para_email, email_copia, whatsapp_1, whatsapp_2, janela_1, janela_2, janela_3, janela_4, janela_5").execute()
         if response.data:
             return {
                 item["cliente"]: {
                     "principal": item.get("enviar_para_email", ""),
                     "copia": item.get("email_copia", ""),
+                    "whats_1": item.get("whatsapp_1", ""), 
+                    "whats_2": item.get("whatsapp_2", ""), 
                     "janelas": [
-                        item.get("janela_1"),
-                        item.get("janela_2"),
-                        item.get("janela_3"),
-                        item.get("janela_4"),
-                        item.get("janela_5")
+                        item.get("janela_1"), item.get("janela_2"), item.get("janela_3"),
+                        item.get("janela_4"), item.get("janela_5")
                     ]
                 }
-                for item in response.data if item.get("enviar_para_email")
+                for item in response.data 
+                # 🟢 Carrega se tiver email OU se tiver qualquer WhatsApp
+                if item.get("enviar_para_email") or item.get("whatsapp_1") or item.get("whatsapp_2")
             }
         return {}
     except Exception as e:
         print(f"Erro ao carregar regras dos clientes: {e}")
         return {}
+
+def enviar_whatsapp_zapi(numero, mensagem_texto, imagem_url=None):
+    """
+    Motor de envio de WhatsApp via Z-API com suporte a imagem (legenda).
+    """
+    if not numero or len(str(numero)) < 10:
+        return False, "Número inválido ou vazio"
+    
+    num_limpo = re.sub(r'[^0-9]', '', str(numero))
+    if not num_limpo.startswith('55'):
+        num_limpo = f"55{num_limpo}"
+
+    headers = {
+        "Client-Token": ZAPI_CLIENT_TOKEN,
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+
+    # Se houver URL de imagem, usa o endpoint de imagem passando a mensagem como legenda (caption)
+    if imagem_url:
+        url = f"https://api.z-api.io/instances/{ZAPI_INSTANCE_ID}/token/{ZAPI_TOKEN}/send-image"
+        payload = {
+            "phone": num_limpo,
+            "image": imagem_url,
+            "caption": mensagem_texto
+        }
+    else:
+        # Se não houver imagem, usa o envio de texto padrão
+        url = f"https://api.z-api.io/instances/{ZAPI_INSTANCE_ID}/token/{ZAPI_TOKEN}/send-text"
+        payload = {
+            "phone": num_limpo,
+            "message": mensagem_texto
+        }
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
+        
+        if response.status_code in [200, 201]:
+            print(f"📱 ✅ Whats enviado com sucesso para {num_limpo}")
+            return True, "WhatsApp enviado"
+        else:
+            erro_msg = f"Erro da API: {response.text}"
+            print(f"📱 ❌ Falha no Whats para {num_limpo}: {erro_msg}")
+            return False, erro_msg
+            
+    except requests.exceptions.Timeout:
+        print(f"📱 ❌ Timeout ao enviar Whats para {num_limpo}")
+        return False, "Timeout na Z-API"
+    except Exception as e:
+        print(f"📱 ❌ Exceção no Whats para {num_limpo}: {e}")
+        return False, f"Erro interno: {e}"
 
 def processar_envio_automatico():
     """Verifica e envia e-mails automáticos, operando em lotes controlados para evitar bloqueios de SMTP (Rate Limit)."""
@@ -837,10 +901,14 @@ def processar_envio_automatico():
             # ==========================================================
             # 2. LÓGICA DE ALERTA DO CLIENTE (JANELAS PERSONALIZADAS)
             # ==========================================================
+            # ==========================================================
+            # 2. LÓGICA DE ALERTA DO CLIENTE (JANELAS PERSONALIZADAS)
+            # ==========================================================
             cliente_nome = ocorr.get("cliente")
             regra = regras_clientes.get(cliente_nome)
             
-            if not regra or not regra["principal"]:
+            # Se não tem regra pro cliente (não tem email nem whatsapp cadastrado)
+            if not regra:
                 continue 
                 
             for i in range(5):
@@ -850,65 +918,108 @@ def processar_envio_automatico():
 
                 if janela_minutos and minutos_decorridos >= janela_minutos and not ocorr.get(coluna_flag):
                     
-                    print(f"📧 Disparando Alerta {num_alerta} ({janela_minutos}min) - Ticket {ticket_formatado}")
+                    print(f"📧/📱 Disparando Alerta {num_alerta} ({janela_minutos}min) - Ticket {ticket_formatado}")
                     
-                    assunto = f"Alerta de Permanência ({int(janela_minutos)} min) - Ticket {ticket_formatado}"
+                    enviou_email = False
+                    enviou_w1 = False
+                    enviou_w2 = False
+                    msg_email = "Não configurado"
                     
-                    corpo = f"""
-                    <html>
-                    <head>
-                        <style>
-                            body {{ font-family: Arial, sans-serif; font-size: 14px; color: #333; }}
-                            table {{ border-collapse: collapse; width: 100%; max-width: 600px; border: 1px solid #ddd; font-size: 13px; }}
-                            th, td {{ border: 1px solid #ddd; padding: 5px 8px; text-align: left; }}
-                            th {{ background-color: #f2f2f2; width: 35%; color: #555; }}
-                            .header {{ background-color: #d9534f; color: white; padding: 10px; max-width: 580px; border-radius: 4px 4px 0 0; }}
-                        </style>
-                    </head>
-                    <body>
-                        <div class="header">
-                            <h2>Notificação de Ocorrência em Aberto</h2>
-                        </div>
-                        <p>Prezado(a) cliente <strong>{cliente_nome}</strong>,</p>
-                        <p>Informamos que o veículo encontra-se no ponto de descarga há mais de <strong>{int(janela_minutos)} minutos</strong>.</p>
-                        <p>Solicitamos sua atuação imediata para regularização do processo de descarga para evitar custos adicionais de TDE.</p>
-                        <table>
-                            <tr><th>Ticket</th><td>{ticket_formatado}</td></tr>
-                            <tr><th>Nota Fiscal</th><td>{ocorr.get('nota_fiscal', '-')}</td></tr>
-                            <tr><th>Destinatário</th><td>{ocorr.get('destinatario', '-')}</td></tr>
-                            <tr><th>Cidade</th><td>{ocorr.get('cidade', '-')}</td></tr>
-                            <tr><th>Tipo de Ocorrência</th><td>{ocorr.get('tipo_de_ocorrencia', '-')}</td></tr>
-                            <tr><th>Data/Hora de Abertura</th><td>{data_abertura_formatada} {hora_abertura_formatada}</td></tr>
-                            {imagem_html}
-                        </table>
-                        <p style="font-size: 11px; color: gray; margin-top: 20px;">⚠️ Este é um e-mail automático. Por favor, não responda.</p>
-                        <p style="margin-bottom: 5px;">Atenciosamente,<br>Equipe de Monitoramento ClikLog Transportes</p>
-                        <img src="https://vismjxhlsctehpvgmata.supabase.co/storage/v1/object/public/assets/logo.png" alt="Logo ClickLog" style="width: 150px; height: auto; margin-top: 10px;">
-                    </body>
-                    </html>
-                    """
+                    # 🟢 1. DISPARO DE E-MAIL
+                    if regra.get("principal"):
+                        assunto = f"Alerta de Permanência ({int(janela_minutos)} min) - Ticket {ticket_formatado}"
+                        corpo = f"""
+                        <html>
+                        <head>
+                            <style>
+                                body {{ font-family: Arial, sans-serif; font-size: 14px; color: #333; }}
+                                table {{ border-collapse: collapse; width: 100%; max-width: 600px; border: 1px solid #ddd; font-size: 13px; }}
+                                th, td {{ border: 1px solid #ddd; padding: 5px 8px; text-align: left; }}
+                                th {{ background-color: #f2f2f2; width: 35%; color: #555; }}
+                                .header {{ background-color: #d9534f; color: white; padding: 10px; max-width: 580px; border-radius: 4px 4px 0 0; }}
+                            </style>
+                        </head>
+                        <body>
+                            <div class="header">
+                                <h2>Notificação de Ocorrência em Aberto</h2>
+                            </div>
+                            <p>Prezado(a) cliente <strong>{cliente_nome}</strong>,</p>
+                            <p>Informamos que o veículo encontra-se no ponto de descarga há mais de <strong>{int(janela_minutos)} minutos</strong>.</p>
+                            <p>Solicitamos sua atuação imediata para regularização do processo de descarga para evitar custos adicionais de TDE.</p>
+                            <table>
+                                <tr><th>Ticket</th><td>{ticket_formatado}</td></tr>
+                                <tr><th>Nota Fiscal</th><td>{ocorr.get('nota_fiscal', '-')}</td></tr>
+                                <tr><th>Destinatário</th><td>{ocorr.get('destinatario', '-')}</td></tr>
+                                <tr><th>Cidade</th><td>{ocorr.get('cidade', '-')}</td></tr>
+                                <tr><th>Tipo de Ocorrência</th><td>{ocorr.get('tipo_de_ocorrencia', '-')}</td></tr>
+                                <tr><th>Data/Hora de Abertura</th><td>{data_abertura_formatada} {hora_abertura_formatada}</td></tr>
+                                {imagem_html}
+                            </table>
+                            <p style="font-size: 11px; color: gray; margin-top: 20px;">⚠️ Este é um e-mail automático. Por favor, não responda.</p>
+                            <p style="margin-bottom: 5px;">Atenciosamente,<br>Equipe de Monitoramento ClikLog Transportes</p>
+                        </body>
+                        </html>
+                        """
+                        # Tenta enviar o email. Se estourar limite, enviou_email fica False e a vida segue
+                        enviou_email, msg_email = enviar_email(regra["principal"], regra["copia"], assunto, corpo, ocorr.get("imagem_url"))
+                    
+                    
+                    # 🟢 2. DISPARO DE WHATSAPP (Via Z-API)
+                    if regra.get("whats_1") or regra.get("whats_2"):
+                        
+                        # Extrai a URL da imagem do banco
+                        img_zap = ocorr.get("imagem_url", "")
+                        
+                        # Cria uma linha com o link clicável caso exista imagem
+                        link_texto = f"\n🔗 *Link do Anexo:* {img_zap}" if img_zap else ""
+                        
+                        mensagem_whats = f"""🚨 *ALERTA DE PERMANÊNCIA: {int(janela_minutos)} min* 🚨
+                        
+Olá, cliente *{cliente_nome}*.
+O veículo encontra-se no ponto de descarga excedendo o tempo limite. Solicitamos sua atuação imediata para regularização do processo de descarga.
 
-                    enviou, msg = enviar_email(regra["principal"], regra["copia"], assunto, corpo, ocorr.get("imagem_url"))
-                    
-                    if enviou:
+📌 *Ticket:* {ticket_formatado}
+📄 *NF:* {ocorr.get('nota_fiscal', '-')}
+📍 *Cidade:* {ocorr.get('cidade', '-')}
+⏱️ *Abertura:* {data_abertura_formatada} às {hora_abertura_formatada}
+⚠️ *Ocorrência:* {ocorr.get('tipo_de_ocorrencia', '-')}{link_texto}
+
+------------------------------------------
+Atenciosamente, *Equipe ClickLog* 🚚
+
+⚠️ *ESTA É UMA MENSAGEM AUTOMÁTICA.*
+*Não responda a este número, ele não é monitorado.*"""
+
+                        if regra.get("whats_1"):
+                            enviou_w1, msg_w1 = enviar_whatsapp_zapi(regra["whats_1"], mensagem_whats, img_zap)
+                        if regra.get("whats_2"):
+                            enviou_w2, msg_w2 = enviar_whatsapp_zapi(regra["whats_2"], mensagem_whats, img_zap)
+
+                    # 🟢 3. CONCLUSÃO E SALVAMENTO DE LOG
+                    # Consideramos sucesso se mandou o email OU se mandou pelo menos 1 whats
+                    if enviou_email or enviou_w1 or enviou_w2:
+                        
+                        # Atualiza o banco com a flag de que a janela foi notificada
                         supabase.table("ocorrencias").update({coluna_flag: True}).eq("id", ocorr["id"]).execute()
+                        
+                        # Salva no histórico com o detalhamento
                         supabase.table("emails_enviados").insert({
                             "data_hora": obter_data_hora_atual_brasil().isoformat(),
                             "tipo": f"Alerta {num_alerta} ({int(janela_minutos)}m)",
                             "cliente": cliente_nome,
-                            "email": regra["principal"],
+                            "email": f"Email: {enviou_email} | W1: {enviou_w1} | W2: {enviou_w2}", 
                             "ticket": ticket_formatado,
                             "nota_fiscal": ocorr.get('nota_fiscal', '-'),
                             "status": "Enviado"
                         }).execute()
-                        resultados.append({"cliente": cliente_nome, "ticket": ticket_formatado, "status": "sucesso", "mensagem": f"Alerta {num_alerta} enviado"})
                         
-                        # Adiciona no lote
+                        resultados.append({"cliente": cliente_nome, "ticket": ticket_formatado, "status": "sucesso", "mensagem": f"Alerta {num_alerta} processado"})
                         emails_enviados_neste_ciclo += 1 
                     else:
-                        resultados.append({"cliente": cliente_nome, "ticket": ticket_formatado, "status": "erro", "mensagem": msg})
+                        # Se TODOS falharam (Ex: Gmail estourou limite E z-api desconectou)
+                        resultados.append({"cliente": cliente_nome, "ticket": ticket_formatado, "status": "erro", "mensagem": f"Falha no envio do alerta {num_alerta}. Erro Email: {msg_email}"})
                     
-                    break 
+                    break # Break para não pular janela
         
         return resultados
     except Exception as e:
@@ -2828,6 +2939,7 @@ if st.session_state.get("login", False):
                                         st.rerun()
                                     else: st.error(msg)
                                 except Exception as e: st.error(f"Erro ao atualizar: {e}")
+        
         # =========================================================
         # 3. GERENCIAR CLIENTES
         # =========================================================
@@ -2871,10 +2983,13 @@ if st.session_state.get("login", False):
                         nome = st.text_input("Nome do Cliente (MAIÚSCULO)*")
                         cnpj_novo = st.text_input("CNPJ (Apenas números)*")
                         focal = st.selectbox("Focal*", options=lista_focais_disp, index=None, placeholder="Selecione o Focal...")
-                        rec_email = st.checkbox("Cliente irá Receber E-mail de Notificação?", value=False)
+                        rec_email = st.checkbox("Cliente irá Receber Notificação?", value=False)
                     with col_n2:
                         email_p = st.text_input("E-mail Principal*").lower() 
                         email_c = st.text_input("Emails em Cópia (;)*").lower()
+                        # 🟢 NOVOS CAMPOS NA COLUNA 2
+                        w1 = st.text_input("WhatsApp 1 (DDD + Número)", max_chars=11, help="Ex: 51988887777")
+                        w2 = st.text_input("WhatsApp 2 (DDD + Número)", max_chars=11)
                     
                     st.markdown("##### ⏱️ Janelas de Notificação (em minutos)")
                     st.caption("Deixe como 0 as janelas que não for utilizar. Ex: 30, 60, 90, 120, 180.")
@@ -2910,22 +3025,32 @@ if st.session_state.get("login", False):
                             if check_cnpj.data: 
                                 erros.append(f"O CNPJ '{cnpj_limpo}' já está vinculado a outro cliente.")
                         
-                        # Outras Validações
                         if not focal: erros.append("Selecione um Focal responsável.")
                         
-                        if not email_p: erros.append("E-mail Principal é obrigatório.")
-                        elif not validar_email(email_p): erros.append("Formato do E-mail Principal inválido.")
+                        # 🟢 NOVA VALIDAÇÃO LÓGICA (E-MAIL E WHATSAPP)
+                        tem_email_p = bool(email_p.strip())
+                        tem_email_c = bool(email_c.strip())
+                        tem_w1 = bool(w1.strip())
+                        tem_w2 = bool(w2.strip())
                         
-                        if not email_c: erros.append("É obrigatório informar ao menos um E-mail em Cópia.")
-                        elif not validar_emails_multiplos(email_c): erros.append("Formato de um ou mais E-mails em Cópia inválido.")
+                        if tem_email_p and not tem_email_c:
+                            erros.append("Se o E-mail Principal for preenchido, o E-mail em Cópia é obrigatório.")
+                        if tem_email_c and not tem_email_p:
+                            erros.append("Não preencha apenas o E-mail em Cópia. O Principal é obrigatório.")
+                        if not tem_email_p and not tem_w1 and not tem_w2:
+                            erros.append("É obrigatório informar E-mails (Principal e Cópia) OU pelo menos um WhatsApp.")
+                        
+                        if tem_email_p and not validar_email(email_p):
+                            erros.append("Formato do E-mail Principal inválido.")
+                        if tem_email_c and not validar_emails_multiplos(email_c):
+                            erros.append("Formato de um ou mais E-mails em Cópia inválido.")
                         
                         if erros:
                             exibir_erros_dialog(erros)
                         else:
-                            suc, msg = inserir_cliente(nome, focal, rec_email, email_p, email_c, cnpj_limpo, j1, j2, j3, j4, j5)
+                            suc, msg = inserir_cliente(nome, focal, rec_email, email_p, email_c, cnpj_limpo, j1, j2, j3, j4, j5, w1, w2)
                             if suc:
                                 carregar_clientes_supabase.clear()
-                                # 🟢 O PULO DO GATO AQUI TAMBÉM: Atualiza o ID do cliente
                                 st.session_state.form_cli_id += 1
                                 exibir_sucesso_dialog(msg)
                             else: 
@@ -2933,7 +3058,8 @@ if st.session_state.get("login", False):
 
             elif opcao_gerencia == "✏️ Editar Existente":
                 try:
-                    res = supabase.table("clientes").select("cliente, id, focal, receber_emails, enviar_para_email, email_copia, cnpj, janela_1, janela_2, janela_3, janela_4, janela_5").range(0, 3000).order("cliente").execute()
+                    # 🟢 AQUI O SELECT BUSCA whatsapp_1 e whatsapp_2
+                    res = supabase.table("clientes").select("cliente, id, focal, receber_emails, enviar_para_email, email_copia, whatsapp_1, whatsapp_2, cnpj, janela_1, janela_2, janela_3, janela_4, janela_5").range(0, 3000).order("cliente").execute()
                     df_edit = pd.DataFrame(res.data) if res.data else pd.DataFrame()
                 except Exception as e:
                     st.error(f"Erro: {e}")
@@ -2962,11 +3088,14 @@ if st.session_state.get("login", False):
                                     
                                 idx_f = lista_focais_disp.index(focal_atual) if focal_atual in lista_focais_disp else 0
                                 novo_focal = st.selectbox("Focal*", options=lista_focais_disp, index=idx_f)
-                                novo_rec = st.checkbox("Cliente irá Receber E-mail de Notificação?", value=bool(dados.get("receber_emails")))
+                                novo_rec = st.checkbox("Cliente irá Receber Notificação?", value=bool(dados.get("receber_emails")))
                                 
                             with c2:
                                 n_ep = st.text_input("E-mail Principal*", value=str(dados.get("enviar_para_email", "") if pd.notna(dados.get("enviar_para_email")) else "").lower()).lower()
-                                n_ec = st.text_input("Emails em Cópia (;)*", value=str(dados.get("email_copia", "") if pd.notna(dados.get("email_copia")) else "").lower()).lower()
+                                n_ec = st.text_input("Emails em Cópia (;)", value=str(dados.get("email_copia", "") if pd.notna(dados.get("email_copia")) else "").lower()).lower()
+                                # 🟢 CAMPOS DE WHATSAPP NA EDIÇÃO PREENCHENDO O DEFAULT COM O VALOR DO BANCO
+                                n_w1 = st.text_input("WhatsApp 1", value=str(dados.get("whatsapp_1", "") if pd.notna(dados.get("whatsapp_1")) else ""), max_chars=11)
+                                n_w2 = st.text_input("WhatsApp 2", value=str(dados.get("whatsapp_2", "") if pd.notna(dados.get("whatsapp_2")) else ""), max_chars=11)
                             
                             st.markdown("##### ⏱️ Janelas (minutos)")
                             j1, j2, j3, j4, j5 = st.columns(5)
@@ -2980,18 +3109,16 @@ if st.session_state.get("login", False):
                             if st.form_submit_button("Salvar Alterações"):
                                 erros_edit = []
                                 
-                                # Validação de Nome na Edição
                                 if not n_nome: 
                                     erros_edit.append("Nome é obrigatório.")
                                 elif not validar_nome_cliente(n_nome): 
-                                    erros_edit.append("Nome deve conter apenas letras MAIÚSCULAS, sem acentos, sem 'Ç' e sem caracteres especiais.")
+                                    erros_edit.append("Nome deve conter apenas letras MAIÚSCULAS.")
                                 else:
                                     check_nome = supabase.table("clientes").select("id").eq("cliente", n_nome).neq("id", dados['id']).execute()
                                     if check_nome.data: erros_edit.append(f"O cliente '{n_nome}' já está cadastrado.")
                                 
                                 if not novo_focal: erros_edit.append("Focal é obrigatório.")
                                 
-                                # Validação de CNPJ na Edição
                                 cnpj_limpo = re.sub(r'[^0-9]', '', n_cnpj)
                                 if not cnpj_limpo: 
                                     erros_edit.append("CNPJ é obrigatório.")
@@ -3001,18 +3128,34 @@ if st.session_state.get("login", False):
                                     check_cnpj = supabase.table("clientes").select("id").eq("cnpj", cnpj_limpo).neq("id", dados['id']).execute()
                                     if check_cnpj.data: erros_edit.append(f"O CNPJ {cnpj_limpo} já pertence a outro cliente.")
                                 
-                                if not n_ep: erros_edit.append("E-mail Principal é obrigatório.")
-                                elif not validar_email(n_ep): erros_edit.append("Formato do E-mail Principal inválido.")
+                                # 🟢 NOVA VALIDAÇÃO LÓGICA (E-MAIL E WHATSAPP NA EDIÇÃO)
+                                tem_ep = bool(n_ep.strip())
+                                tem_ec = bool(n_ec.strip())
+                                tem_w1 = bool(n_w1.strip())
+                                tem_w2 = bool(n_w2.strip())
+
+                                if tem_ep and not tem_ec:
+                                    erros_edit.append("Se informar E-mail Principal, o E-mail em Cópia é obrigatório.")
+                                if tem_ec and not tem_ep:
+                                    erros_edit.append("Não preencha apenas o E-mail em Cópia. O Principal é obrigatório.")
+                                if not tem_ep and not tem_w1 and not tem_w2:
+                                    erros_edit.append("É obrigatório informar E-mails (Principal e Cópia) OU pelo menos um WhatsApp.")
                                 
-                                if not n_ec: erros_edit.append("Ao menos um E-mail em Cópia é obrigatório.")
-                                elif not validar_emails_multiplos(n_ec): erros_edit.append("Formato de E-mails em Cópia inválido.")
+                                if tem_ep and not validar_email(n_ep):
+                                    erros_edit.append("Formato do E-mail Principal inválido.")
+                                if tem_ec and not validar_emails_multiplos(n_ec):
+                                    erros_edit.append("Formato de E-mails em Cópia inválido.")
 
                                 if erros_edit:
                                     exibir_erros_dialog(erros_edit)
                                 else:
+                                    w1_limpo = re.sub(r'[^0-9]', '', n_w1) if n_w1 else None
+                                    w2_limpo = re.sub(r'[^0-9]', '', n_w2) if n_w2 else None
+
                                     up = {
                                         "cliente": n_nome, "cnpj": cnpj_limpo, "focal": novo_focal, "receber_emails": novo_rec, 
                                         "enviar_para_email": n_ep, "email_copia": n_ec,
+                                        "whatsapp_1": w1_limpo, "whatsapp_2": w2_limpo, 
                                         "janela_1": v1 if v1 > 0 else None, "janela_2": v2 if v2 > 0 else None,
                                         "janela_3": v3 if v3 > 0 else None, "janela_4": v4 if v4 > 0 else None,
                                         "janela_5": v5 if v5 > 0 else None
@@ -3026,7 +3169,8 @@ if st.session_state.get("login", False):
 
             # --- TABELA GERAL DE CLIENTES (GRID COMPLETO) ---
             st.markdown("### Lista de Clientes")
-            df_view_res = supabase.table("clientes").select("cliente, cnpj, focal, enviar_para_email, email_copia, janela_1, janela_2, janela_3, janela_4, janela_5").execute()
+            # 🟢 O QUERY PRO GRID PEGA WHATS_1 e WHATS_2
+            df_view_res = supabase.table("clientes").select("cliente, cnpj, focal, enviar_para_email, email_copia, whatsapp_1, whatsapp_2, janela_1, janela_2, janela_3, janela_4, janela_5").execute()
             
             if df_view_res.data:
                 df_view = pd.DataFrame(df_view_res.data)
@@ -3035,13 +3179,14 @@ if st.session_state.get("login", False):
                 df_view = df_view.rename(columns={
                     "cliente": "Cliente", "cnpj": "CNPJ", "focal": "Focal", 
                     "enviar_para_email": "E-mail Principal", "email_copia": "E-mail Cópia", 
+                    "whatsapp_1": "WhatsApp 1", "whatsapp_2": "WhatsApp 2", # 🟢 RENOMEIA PARA O GRID
                     "janela_1": "J1", "janela_2": "J2", 
                     "janela_3": "J3", "janela_4": "J4", "janela_5": "J5"
                 })
                 
                 # Organiza a ordem das colunas para exibição na tela
                 ordem_colunas = [
-                    "Cliente", "CNPJ", "Focal", "E-mail Principal", "E-mail Cópia", 
+                    "Cliente", "CNPJ", "Focal", "E-mail Principal", "E-mail Cópia", "WhatsApp 1", "WhatsApp 2", 
                     "J1", "J2", "J3", "J4", "J5"
                 ]
                 df_view = df_view[ordem_colunas]
