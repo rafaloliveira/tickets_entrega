@@ -97,3 +97,6 @@ Regras que vou respeitar:
 - Priorizar os ganhos operacionais, financeiros, de produtividade e de controle.
 - Manter um histórico consistente, organizado por sistema e versão.
 - Nunca afirmar que um arquivo foi salvo ou que um deploy ocorreu sem confirmação.
+
+## Comunicados
+- Mensagens de atualização aos usuários ficam em `comunicados/`, um arquivo por envio (`AAAA-MM-DD_assunto.md`), salvo por commit/push.
