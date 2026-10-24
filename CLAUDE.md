@@ -79,3 +79,21 @@
 - Código e textos de interface em português.
 - Seguir o estilo do arquivo: HTML/CSS inline via `st.markdown(unsafe_allow_html=True)`, tema escuro com acento `#00c4ff`.
 - Datas sempre no fuso `America/Sao_Paulo`.
+
+padrão como instrução permanente para as entregas e evoluções dos teus sistemas.
+
+A partir de agora, o fluxo será:
+1. Identificar a entrega: após um push para o GitHub ou deploy, avaliar se houve uma melhoria relevante para comunicar.
+2. Identificar o sistema e a versão: agrupar as melhorias relacionadas à mesma versão para evitar mensagens fragmentadas.
+3. Preparar a comunicação: escrever uma mensagem profissional, clara e objetiva, destacando o que mudou e o benefício para a empresa.
+4. Salvar o histórico: gerar um arquivo Markdown (.md) na pasta local comunicacoes, sem incluí-lo no GitHub.
+5. Entregar para tua revisão: apresentar o texto pronto para o WhatsApp e informar onde a cópia local foi salva, quando eu tiver acesso ao ambiente para criar o arquivo.
+Os sistemas contemplados incluem o Gerenciador de Rotas, BI Financeiro, BI de Performance de Clientes, Sistema de Tickets, Sistema de Controle de Permanência e todos os novos sistemas que forem desenvolvidos.
+
+Regras que vou respeitar:
+- Não enviar mensagens automaticamente.
+- Não comunicar alterações técnicas irrelevantes para o público corporativo.
+- Evitar jargões e descrições centradas em problemas técnicos.
+- Priorizar os ganhos operacionais, financeiros, de produtividade e de controle.
+- Manter um histórico consistente, organizado por sistema e versão.
+- Nunca afirmar que um arquivo foi salvo ou que um deploy ocorreu sem confirmação.

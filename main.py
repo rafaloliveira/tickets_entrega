@@ -8,6 +8,7 @@ st.set_page_config(
 
 import os
 import re
+import unicodedata
 import time as tm
 import uuid
 import base64
@@ -40,13 +41,13 @@ load_dotenv()
 # 1. CONFIGURAÇÕES GLOBAIS E CHAVES (EMAIL, SUPABASE, FUSO HORÁRIO)
 # ====================================================================
 
-# --- CONFIGURAÇÕES DE E-MAIL (AGORA COM RESEND) ---
-EMAIL_REMETENTE = "ticket@clicklogtransportes.com.br" 
+# --- CONFIGURAÇÕES DE E-MAIL (GMAIL) ---
+EMAIL_REMETENTE = "ticketclicklogtransportes@gmail.com"
 
-# Credenciais do Resend
-SMTP_USERNAME = "resend" 
-SMTP_PASSWORD = "re_Pu2eoqr2_F79XHV2ca2YcP5qcHf6NNGzD" # <--- SUA CHAVE API DO RESEND AQUI
-SMTP_HOST = "smtp.resend.com" 
+# Credenciais usadas no teste de conexão SMTP (mesmo provedor do envio)
+SMTP_USERNAME = "ticketclicklogtransportes@gmail.com"
+SMTP_PASSWORD = "gpbh tjyq wyvi jibs"
+SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 587 
 
 socket.setdefaulttimeout(30) 
@@ -173,6 +174,7 @@ def inserir_ocorrencia_supabase(dados):
             "id": dados["id"],
             "numero_ticket": dados["numero_ticket"],
             "nota_fiscal": dados["nota_fiscal"],
+            "numero_carga": dados.get("numero_carga"),
             "cliente": dados["cliente"],
             "focal": dados["focal"],
             "destinatario": dados["destinatario"],
@@ -317,6 +319,38 @@ def validar_nome_cliente(texto):
     # Aceita apenas letras de A a Z (sem acento), números e espaços em branco
     padrao = r'^[A-Z0-9 ]+$'
     return bool(re.match(padrao, texto))
+
+def normalizar_nome_cliente(texto):
+    """Maiúsculo, sem acentos/Ç, sem caracteres especiais e sem espaços duplicados."""
+    sem_acento = unicodedata.normalize("NFKD", str(texto or "")).encode("ascii", "ignore").decode("ascii")
+    so_validos = re.sub(r'[^A-Z0-9 ]', '', sem_acento.upper())
+    return re.sub(r'\s+', ' ', so_validos).strip()
+
+def converter_valor_brl(texto):
+    """Converte o texto dos campos de valor (ex.: '1.234,56') em float; vazio -> None."""
+    digitos = re.sub(r'\D', '', str(texto or ""))
+    return int(digitos) / 100 if digitos else None
+
+def texto_complementares(ocorr):
+    """Texto dos complementares de descarga/taxa (para e-mail e cards). Tickets antigos usam a coluna 'complementar'."""
+    partes = []
+    if ocorr.get("complementar_descarga"):
+        partes.append(f"Descarga: {ocorr['complementar_descarga']}")
+    if ocorr.get("complementar_taxa"):
+        partes.append(f"{ocorr.get('tipo_taxa') or 'Taxa'}: {ocorr['complementar_taxa']}")
+    if not partes and ocorr.get("complementar") not in (None, "", "-"):
+        partes.append(str(ocorr["complementar"]))
+    return " | ".join(partes)
+
+def normalizar_texto_maiusculo(texto):
+    """Maiúsculo, sem espaços nas pontas e sem espaços duplicados (mantém acentos e quebras de linha)."""
+    linhas = [re.sub(r'[ \t]+', ' ', linha).strip() for linha in str(texto or "").upper().splitlines()]
+    return "\n".join(linhas).strip()
+
+def normalizar_emails(texto):
+    """Minúsculo, sem espaços; mantém ';' como separador e remove vazios."""
+    partes = [p.strip().lower() for p in re.split(r'[;,]', str(texto or "")) if p.strip()]
+    return ";".join(partes)
 
 def validar_email(email):
     padrao = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
@@ -520,7 +554,7 @@ def obter_focais_com_contagem():
         st.error(f"Erro ao obter focais com contagem: {e}")
         return []
 
-def finalizar_ocorrencia(ocorr, complemento, data_finalizacao_manual, hora_finalizacao_manual, imagem_url_finalizacao="", observacao_final="", numero_manifesto_val=""):
+def finalizar_ocorrencia(ocorr, complemento, data_finalizacao_manual, hora_finalizacao_manual, imagem_url_finalizacao="", observacao_final="", numero_manifesto_val="", dados_extras=None):
     try:
         data_abertura_manual = ocorr.get("data_abertura_manual")
         hora_abertura_manual = ocorr.get("hora_abertura_manual")
@@ -554,19 +588,24 @@ def finalizar_ocorrencia(ocorr, complemento, data_finalizacao_manual, hora_final
             data_finalizacao_banco = data_hora_finalizacao.strftime("%Y-%m-%d")
             hora_finalizacao_banco = data_hora_finalizacao.strftime("%H:%M:%S")
 
-            response = supabase.table("ocorrencias").update({
+            dados_finalizacao = {
                 "data_hora_finalizacao": data_hora_finalizacao.strftime("%Y-%m-%d %H:%M:%S"),
                 "finalizado_por": st.session_state.username,
                 "complementar": complemento,
                 "status": "Finalizada",
                 "permanencia_manual": permanencia_manual,
                 "data_finalizacao_manual": data_finalizacao_banco,
-                "hora_finalizacao_manual": hora_finalizacao_banco, 
+                "hora_finalizacao_manual": hora_finalizacao_banco,
                 "email_finalizacao_enviado": False,
                 "observacao_final": observacao_final,
-                "numero_manifesto": numero_manifesto_val, 
+                "numero_manifesto": numero_manifesto_val,
                 "imagem_finalizacao_url": imagem_url_finalizacao
-            }).eq("id", ocorr["id"]).execute()
+            }
+            # Pagamento de descarga e taxa TDE/TDA (colunas próprias em ocorrencias)
+            if dados_extras:
+                dados_finalizacao.update(dados_extras)
+
+            response = supabase.table("ocorrencias").update(dados_finalizacao).eq("id", ocorr["id"]).execute()
             
             if response and response.data:
                 ocorr_atualizada = response.data[0]
@@ -1008,7 +1047,7 @@ def enviar_email_finalizacao(ocorr_atualizada):
                     <tr><th>Permanência</th><td>{ocorr_atualizada.get('permanencia_manual', '-')}</td></tr>
                     {imagem_html}
                 </table>
-                <p><strong>Complemento:</strong> {ocorr_atualizada.get('complementar', 'Sem complemento.')}</p>
+                <p><strong>Complemento:</strong> {texto_complementares(ocorr_atualizada) or 'Sem complemento.'}</p>
                 <p>Atenciosamente,<br>Equipe de Monitoramento ClikLog Transportes</p>
                 <img src="https://vismjxhlsctehpvgmata.supabase.co/storage/v1/object/public/assets/logo.png" alt="Logo ClickLog" style="width: 150px; height: auto; margin-top: 10px;">
             </body>
@@ -1111,11 +1150,72 @@ def auto_sanitizar_ocorrencia(ocorr):
             ocorr[campo] = "-"
     return ocorr
 
+COLUNAS_RELATORIO_FINALIZADAS = {
+    "numero_ticket": "Ticket", "nota_fiscal": "Nota Fiscal", "numero_carga": "Número da Carga", "cliente": "Cliente", "focal": "Focal",
+    "destinatario": "Destinatário", "cidade": "Cidade", "motorista": "Motorista",
+    "tipo_de_ocorrencia": "Tipo de Ocorrência", "observacoes": "Observações", "responsavel": "Responsável",
+    "status": "Status",
+    "data_abertura_manual": "Data Abertura", "hora_abertura_manual": "Hora Abertura",
+    "data_finalizacao_manual": "Data Finalização", "hora_finalizacao_manual": "Hora Finalização",
+    "permanencia_manual": "Permanência", "finalizado_por": "Finalizado Por",
+    "houve_descarga": "Houve Pagamento Descarga", "valor_descarga": "Valor Descarga (R$)",
+    "complementar_descarga": "Complementar Descarga",
+    "houve_taxa": "Houve Taxa TDE/TDA", "tipo_taxa": "Tipo Taxa", "valor_taxa": "Valor Taxa (R$)",
+    "complementar_taxa": "Complementar Taxa",
+    "observacao_final": "Observação Final", "numero_manifesto": "N° Manifesto",
+    "alerta_1_enviado": "Alerta 1 Enviado", "alerta_2_enviado": "Alerta 2 Enviado",
+    "alerta_3_enviado": "Alerta 3 Enviado", "alerta_4_enviado": "Alerta 4 Enviado",
+    "alerta_5_enviado": "Alerta 5 Enviado", "email_finalizacao_enviado": "E-mail Finalização Enviado",
+    "imagem_url": "Link Imagem Abertura", "imagem_finalizacao_url": "Link Imagem Finalização",
+    "complementar": "Complementar (antigo)",
+}
+
+def montar_dataframe_relatorio_finalizadas(registros):
+    """Prepara o relatório de finalizadas: sem id, cabeçalhos amigáveis, ticket curto, Sim/Não e datas no padrão BR."""
+    df = pd.DataFrame(registros)
+    colunas = [c for c in COLUNAS_RELATORIO_FINALIZADAS if c in df.columns]
+    df = df[colunas].copy()
+
+    df["numero_ticket"] = df["numero_ticket"].astype(str).str[-5:]
+    for col in ["houve_descarga", "houve_taxa", "alerta_1_enviado", "alerta_2_enviado", "alerta_3_enviado",
+                "alerta_4_enviado", "alerta_5_enviado", "email_finalizacao_enviado"]:
+        if col in df.columns:
+            df[col] = df[col].map({True: "Sim", False: "Não"})
+    for col in ["data_abertura_manual", "data_finalizacao_manual"]:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors="coerce")
+    for col in ["valor_descarga", "valor_taxa"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    return df.rename(columns=COLUNAS_RELATORIO_FINALIZADAS)
+
+@st.cache_data(ttl=420, show_spinner=False)
+def gerar_excel_finalizadas(registros):
+    """Gera o .xlsx do relatório de finalizadas (cabeçalho estilizado, datas BR, valores em R$)."""
+    df = montar_dataframe_relatorio_finalizadas(registros)
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter', datetime_format='dd/mm/yyyy', date_format='dd/mm/yyyy') as writer:
+        df.to_excel(writer, index=False, sheet_name='Finalizadas')
+        planilha = writer.sheets['Finalizadas']
+        fmt_cabecalho = writer.book.add_format({'bold': True, 'bg_color': '#1F4E78', 'font_color': '#FFFFFF', 'border': 1, 'valign': 'vcenter'})
+        fmt_moeda = writer.book.add_format({'num_format': 'R$ #,##0.00'})
+        fmt_data = writer.book.add_format({'num_format': 'dd/mm/yyyy'})
+        for i, nome_col in enumerate(df.columns):
+            planilha.write(0, i, nome_col, fmt_cabecalho)
+            largura = min(max(len(str(nome_col)) + 2, 14), 40)
+            if "(R$)" in nome_col: planilha.set_column(i, i, largura, fmt_moeda)
+            elif nome_col.startswith("Data "): planilha.set_column(i, i, largura, fmt_data)
+            else: planilha.set_column(i, i, largura)
+        planilha.freeze_panes(1, 0)
+        planilha.autofilter(0, 0, len(df), len(df.columns) - 1)
+    return output.getvalue()
+
 @st.cache_data(ttl=420)     
 def carregar_ocorrencias_finalizadas(data_inicio_str, data_fim_str):
     """Carrega as ocorrências finalizadas filtrando pelo período diretamente no banco de dados."""
     try:
-        cols = "id, numero_ticket, nota_fiscal, cliente, focal, destinatario, cidade, motorista, tipo_de_ocorrencia, observacoes, responsavel, status, data_abertura_manual, hora_abertura_manual, alerta_1_enviado, alerta_2_enviado, alerta_3_enviado, alerta_4_enviado, alerta_5_enviado, imagem_url, data_hora_finalizacao, finalizado_por, complementar, permanencia_manual, data_finalizacao_manual, hora_finalizacao_manual, email_finalizacao_enviado, observacao_final, numero_manifesto, imagem_finalizacao_url"
+        cols = "id, numero_ticket, nota_fiscal, cliente, focal, destinatario, cidade, motorista, tipo_de_ocorrencia, observacoes, responsavel, status, data_abertura_manual, hora_abertura_manual, alerta_1_enviado, alerta_2_enviado, alerta_3_enviado, alerta_4_enviado, alerta_5_enviado, imagem_url, data_hora_finalizacao, finalizado_por, complementar, permanencia_manual, data_finalizacao_manual, hora_finalizacao_manual, email_finalizacao_enviado, observacao_final, numero_manifesto, imagem_finalizacao_url, numero_carga, houve_descarga, valor_descarga, complementar_descarga, houve_taxa, tipo_taxa, valor_taxa, complementar_taxa"
         
         # Cria a query base filtrando o status e o range de datas
         query = supabase.table("ocorrencias").select(cols).eq("status", "Finalizada")
@@ -1396,24 +1496,15 @@ if "ocorrencias_finalizadas" not in st.session_state: st.session_state.ocorrenci
 
 if st.session_state.get("login", False):
     
-    col_welcome_text, col_logout_button = st.columns([5, 0.5])
-    with col_welcome_text:
-        nome_completo = st.session_state.get('username', 'Usuário')
+    nome_completo = st.session_state.get('username', 'Usuário')
+    
+    # Garante que não haverá erro de IndexError se a string for vazia e formata a capitalização
+    if nome_completo and nome_completo.strip():
+        primeiro_nome = nome_completo.split()[0].capitalize()
+    else:
+        primeiro_nome = 'Usuário'
         
-        # Garante que não haverá erro de IndexError se a string for vazia e formata a capitalização
-        if nome_completo and nome_completo.strip():
-            primeiro_nome = nome_completo.split()[0].capitalize()
-        else:
-            primeiro_nome = 'Usuário'
-            
-        st.markdown(f"👋 **Bem-vindo, {primeiro_nome}!**")
-
-    with col_logout_button:
-        if st.button("🚪 Sair"):
-            for key in ["login", "username", "is_admin", "expiry_time", "classe"]: 
-                cookies[key] = ""
-            st.session_state.login = False
-            st.rerun()
+    st.markdown(f"👋 **Bem-vindo, {primeiro_nome}!**")
 
     st.markdown("---")  
 
@@ -1421,19 +1512,19 @@ if st.session_state.get("login", False):
         "📝 Nova Ocorrência": "aba1",
         "📌 Ocorrências em Aberto": "aba2",
         "✅ Ocorrências Finalizadas": "aba3",
-        "📊 Configurações": "aba4",
-        "📧 Notificações por E-mail": "aba6",
+        "📊 Estatística": "aba8",
         "🔄 Cadastros": "aba7",
-        "📊 Estatística": "aba8"
+        "📧 Notificações por E-mail": "aba6",
+        "⚙️ Configurações": "aba4"
     }
 
     abas_usuario = {
         "📝 Nova Ocorrência": "aba1",
         "📌 Ocorrências em Aberto": "aba2",
         "✅ Ocorrências Finalizadas": "aba3",
-        "📊 Configurações": "aba4",
+        "📊 Estatística": "aba8",
         "🔄 Cadastros": "aba7",
-        "📊 Estatística": "aba8"
+        "⚙️ Configurações": "aba4"
     }
 
     current_user_abas_map = abas_admin if st.session_state.is_admin else abas_usuario
@@ -1441,15 +1532,31 @@ if st.session_state.get("login", False):
     if "aba_ativa" not in st.session_state:
         st.session_state.aba_ativa = "aba1"  
 
-    try:
-        current_tab_name = next(key for key, value in current_user_abas_map.items() if value == st.session_state.aba_ativa)
-        initial_index = list(current_user_abas_map.keys()).index(current_tab_name)
-    except (StopIteration, ValueError):
-        initial_index = 0 
+    # Garante que a aba ativa exista no menu do perfil atual
+    if st.session_state.aba_ativa not in current_user_abas_map.values():
+        st.session_state.aba_ativa = "aba1"
 
-    aba_nome = st.sidebar.radio("📁 Menu", list(current_user_abas_map.keys()), key="menu_abas", index=initial_index)
+    def _selecionar_aba(codigo_aba):
+        st.session_state.aba_ativa = codigo_aba
 
-    st.session_state.aba_ativa = current_user_abas_map[aba_nome]
+    # Menu lateral com botões (a aba ativa fica destacada)
+    st.sidebar.markdown("### 📁 Menu")
+    for nome_aba, codigo_aba in current_user_abas_map.items():
+        st.sidebar.button(
+            nome_aba,
+            key=f"menu_btn_{codigo_aba}",
+            use_container_width=True,
+            type="primary" if st.session_state.aba_ativa == codigo_aba else "secondary",
+            on_click=_selecionar_aba,
+            args=(codigo_aba,),
+        )
+
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🚪 Sair", key="btn_sair_sidebar", use_container_width=True):
+        for key in ["login", "username", "is_admin", "expiry_time", "classe"]: 
+            cookies[key] = ""
+        st.session_state.login = False
+        st.rerun()
 
     # ====================================================================
     # 🟢 SISTEMA DE COBRANÇA "CHATO" (POP-UP A CADA 1 HORA PARA TICKETS > 12H)
@@ -1495,6 +1602,18 @@ if st.session_state.get("login", False):
     #     ABA 1 - NOVA OCORRENCIA
     # =========================
     if st.session_state.aba_ativa == "aba1":
+        # Sobe o conteúdo só nesta página (o CSS não é injetado nas outras abas)
+        st.markdown("""
+            <style>
+            .block-container { padding-top: 1.5rem !important; }
+            .block-container hr { margin: 0.5rem 0 !important; }
+            .block-container h2 { padding-top: 0.25rem !important; padding-bottom: 0.25rem !important; }
+            /* Esconde a legenda "Press Enter to submit form" dos campos */
+            [data-testid="InputInstructions"] { display: none !important; }
+            /* Texto digitado aparece em MAIÚSCULO (o valor é normalizado ao salvar) */
+            input[aria-label^="Destinatário"], input[aria-label^="Nº da Carga"], input[aria-label^="Digite o nome"], textarea[aria-label^="Observações"] { text-transform: uppercase; }
+            </style>
+        """, unsafe_allow_html=True)
         st.header("Nova Ocorrência")
         
         # 🟢 CONTROLADOR DE IDENTIDADE DO FORMULÁRIO (A Mágica do Reset)
@@ -1515,12 +1634,14 @@ if st.session_state.get("login", False):
             col1, col2 = st.columns(2)
 
             with col1:
-                nf = st.text_input("Nota Fiscal*")
+                col_nf, col_carga = st.columns([3, 2])
+                with col_nf: nf = st.text_input("Nota Fiscal*")
+                with col_carga: numero_carga = st.text_input("Nº da Carga*", max_chars=20)
                 nf_invalida = nf != "" and not nf.isdigit()
                 
                 destinatario = st.text_input("Destinatário*")
 
-                cliente_opcao = st.selectbox("Cliente*", options=clientes + ["Outro ()"], index=None)
+                cliente_opcao = st.selectbox("Cliente*", options=clientes + ["Outro ()"], index=None, placeholder=" ")
                 cliente = st.text_input("Digite o nome do cliente*") if cliente_opcao == "Outro ()" else cliente_opcao
 
                 # Verifica o focal do cliente
@@ -1528,19 +1649,20 @@ if st.session_state.get("login", False):
                 if cliente_opcao and cliente_opcao in cliente_to_focal:
                     focal_responsavel = cliente_to_focal[cliente_opcao]
 
-                cidade_opcao = st.selectbox("Cidade*", options=cidades + ["Outro (digitar manualmente)"], index=None)
+                cidade_opcao = st.selectbox("Cidade*", options=cidades + ["Outro (digitar manualmente)"], index=None, placeholder=" ")
                 cidade = st.text_input("Digite o nome da cidade*") if cidade_opcao == "Outro (digitar manualmente)" else cidade_opcao
 
                 imagem = st.file_uploader("📎 Anexar imagem*", type=["png", "jpg", "jpeg"])
 
             with col2:
                 opcoes_motoristas = motoristas + ["Outro (digitar manualmente)"]
-                motorista_opcao = st.selectbox("Motorista*", options=opcoes_motoristas, index=None)
+                motorista_opcao = st.selectbox("Motorista*", options=opcoes_motoristas, index=None, placeholder=" ")
                 motorista = st.text_input("Digite o nome do motorista*") if motorista_opcao == "Outro (digitar manualmente)" else motorista_opcao
 
                 tipo = st.multiselect(
                     "Tipo de Ocorrência*",
-                    options=["Chegada no Local", "Pedido Bloqueado", "Aguardando Descarga", "Divergência"]
+                    options=["Chegada no Local", "Pedido Bloqueado", "Aguardando Descarga", "Divergência"],
+                    placeholder=" "
                 )
 
                 obs = st.text_area("Observações")
@@ -1569,14 +1691,46 @@ if st.session_state.get("login", False):
                 with col_hora:
                     hora_abertura_manual = st.time_input("Hora de Abertura*", key=chave_hora)
 
-            enviar = st.form_submit_button("Adicionar Ocorrência", use_container_width=True)
+            # Botão verde e compacto, alinhado à esquerda
+            # O marcador fica logo antes do botão; o CSS pega o botão que vem depois dele
+            st.markdown("""
+                <span class="marcador-btn-add-ocorr"></span>
+                <style>
+                div:has(.marcador-btn-add-ocorr):not(:has(button)) + div button,
+                div:has(.marcador-btn-add-ocorr):not(:has(button)) + div button:focus,
+                div:has(.marcador-btn-add-ocorr):not(:has(button)) + div button:active {
+                    background-color: #28a745 !important;
+                    border-color: #28a745 !important;
+                    color: #ffffff !important;
+                    padding: 0.35rem 1.2rem !important;
+                    min-height: 0 !important;
+                }
+                div:has(.marcador-btn-add-ocorr):not(:has(button)) + div button:hover {
+                    background-color: #218838 !important;
+                    border-color: #218838 !important;
+                    color: #ffffff !important;
+                }
+                div:has(.marcador-btn-add-ocorr):not(:has(button)) + div button p {
+                    color: #ffffff !important;
+                }
+                </style>
+            """, unsafe_allow_html=True)
+            enviar = st.form_submit_button("Adicionar Ocorrência")
 
         # 🟢 LÓGICA DE SALVAMENTO AO CLICAR EM ENVIAR
         if enviar:
             erros_abertura = []
-            
+
+            # Normalização em MAIÚSCULO dos textos digitados (valores escolhidos nas listas ficam como estão)
+            destinatario = normalizar_texto_maiusculo(destinatario)
+            numero_carga = normalizar_texto_maiusculo(numero_carga)
+            obs = normalizar_texto_maiusculo(obs)
+            if cliente_opcao == "Outro ()": cliente = normalizar_texto_maiusculo(cliente)
+            if cidade_opcao == "Outro (digitar manualmente)": cidade = normalizar_texto_maiusculo(cidade)
+            if motorista_opcao == "Outro (digitar manualmente)": motorista = normalizar_texto_maiusculo(motorista)
+
             campos_obrigatorios = {
-                "Nota Fiscal": nf, "Cliente": cliente, "Destinatário": destinatario, 
+                "Nota Fiscal": nf, "Número da Carga": numero_carga, "Cliente": cliente, "Destinatário": destinatario, 
                 "Cidade": cidade, "Motorista": motorista, "Tipo de Ocorrência": tipo
             }
             faltando = [campo for campo, valor in campos_obrigatorios.items() if not valor]
@@ -1622,7 +1776,7 @@ if st.session_state.get("login", False):
 
                     nova_ocorrencia = {
                         "id": str(uuid.uuid4()),
-                        "numero_ticket": numero_ticket, "nota_fiscal": nf, "cliente": cliente,
+                        "numero_ticket": numero_ticket, "nota_fiscal": nf, "numero_carga": numero_carga, "cliente": cliente,
                         "focal": focal_responsavel, "destinatario": destinatario,
                         "cidade": cidade, "motorista": motorista, "tipo_de_ocorrencia": ", ".join(tipo),
                         "observacoes": obs, "responsavel": responsavel,
@@ -1663,14 +1817,129 @@ if st.session_state.get("login", False):
     #     ABA 2 - EM ABERTO 
     # =========================
     if st.session_state.aba_ativa == "aba2":
+        # Cards com largura FIXA (360px): não encolhem nem esticam com a tela; as linhas quebram conforme o espaço
+        st.markdown("""
+            <style>
+            .block-container { padding-top: 1.5rem !important; padding-left: 2rem !important; padding-right: 2rem !important; }
+            .block-container hr { margin: 0.5rem 0 !important; }
+            .block-container h2 { padding-top: 0.25rem !important; padding-bottom: 0.25rem !important; }
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(4)) {
+                flex-wrap: wrap !important;
+                gap: 0.75rem !important;
+            }
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(4)) > [data-testid="stColumn"] {
+                flex: 0 0 360px !important;
+                width: 360px !important;
+                min-width: 360px !important;
+                max-width: 360px !important;
+            }
+            </style>
+        """, unsafe_allow_html=True)
         
         @st.dialog(" Finalizar Ocorrência")
         def dialog_finalizar_ocorrencia(ocorr):
             st.markdown(f"**Ticket #:** {str(ocorr.get('numero_ticket', '-'))[-5:]} | **Cliente:** {ocorr.get('cliente', '-')}")
-            
-            with st.form(f"form_fin_ocorr_{ocorr['id']}"):
+
+            # Esconde a legenda "Press Enter to submit form" dos campos e deixa os avisos (toast)
+            # vermelhos no canto inferior direito (só enquanto este modal está aberto)
+            st.markdown("""
+                <style>
+                [data-testid="InputInstructions"] { display: none !important; }
+                [data-testid="stToastContainer"], [data-testid="toastContainer"] {
+                    left: auto !important; right: 1rem !important; bottom: 1rem !important;
+                    z-index: 2147483647 !important; /* acima do overlay do dialog */
+                }
+                [data-testid="stToast"] {
+                    background-color: #c0392b !important;
+                    color: #ffffff !important;
+                    border: 1px solid #962d22 !important;
+                }
+                [data-testid="stToast"] * { color: #ffffff !important; }
+                /* Dialog mais compacto: menos espaço entre os elementos */
+                div[role="dialog"] [data-testid="stVerticalBlock"] { gap: 0.5rem !important; }
+                div[role="dialog"] h5 { padding: 0.75rem 0 0.25rem 0 !important; margin: 0 !important; }
+                /* Menos espaço entre o título do dialog e a linha do ticket */
+                div[role="dialog"] h2 { padding-bottom: 0 !important; margin-bottom: 0 !important; }
+                div[role="dialog"] > div > div:first-child { padding-bottom: 0 !important; }
+                /* Campos de entrada um pouco maiores */
+                div[role="dialog"] [data-baseweb="input"], div[role="dialog"] [data-baseweb="base-input"] { min-height: 3rem !important; }
+                div[role="dialog"] [data-baseweb="input"] input { font-size: 1rem !important; padding-top: 0.6rem !important; padding-bottom: 0.6rem !important; }
+                div[role="dialog"] [data-testid="stFileUploaderDropzone"] { padding: 0.5rem 1rem !important; }
+                </style>
+            """, unsafe_allow_html=True)
+
+            # Máscara de moeda: os dígitos digitados entram como centavos (1234 -> 12,34) nos campos "(R$)"
+            st.components.v1.html("""
+                <script>
+                const doc = window.parent.document;
+                if (!window.parent.__mascaraMoedaBrl) {
+                    window.parent.__mascaraMoedaBrl = true;
+                    doc.addEventListener('input', function (e) {
+                        const el = e.target;
+                        if (!el || el.tagName !== 'INPUT') return;
+                        const rotulo = el.getAttribute('aria-label') || '';
+                        if (!rotulo.endsWith('(R$)')) return;
+                        const soDigitos = el.value.replace(/\\D/g, '');
+                        let formatado = '';
+                        if (soDigitos !== '') {
+                            const digitos = soDigitos.replace(/^0+/, '').padStart(3, '0');
+                            const inteiro = digitos.slice(0, -2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, '.');
+                            formatado = inteiro + ',' + digitos.slice(-2);
+                        }
+                        if (formatado === el.value) return;
+                        const setter = Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype, 'value').set;
+                        setter.call(el, formatado);
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                    }, true);
+                }
+                </script>
+            """, height=0)
+
+            # Marcar "Sim" desmarca "Não" e vice-versa; dá para desmarcar para trocar a resposta
+            def _marcar_exclusivo(chave_marcada, chave_outra):
+                if st.session_state.get(chave_marcada):
+                    st.session_state[chave_outra] = False
+
+            with st.container():
                 
-                complemento = st.text_input("Complementar*")
+                st.markdown("##### 🚛 Pagamento de Descarga")
+                st.markdown("**Houve Pagamento descarga?***")
+                col_ds, col_dn = st.columns(2)
+                k_ds, k_dn = f"descarga_sim_{ocorr['id']}", f"descarga_nao_{ocorr['id']}"
+                with col_ds: descarga_sim = st.checkbox("Sim", key=k_ds, on_change=_marcar_exclusivo, args=(k_ds, k_dn))
+                with col_dn: descarga_nao = st.checkbox("Não", key=k_dn, on_change=_marcar_exclusivo, args=(k_dn, k_ds))
+                col_vd, col_cd = st.columns(2)
+                with col_vd:
+                    valor_descarga_txt = st.text_input(
+                        "Valor descarga (R$)", placeholder="0,00", help="Obrigatório se houve pagamento de descarga. Aceita zero.",
+                        disabled=not descarga_sim, key=f"valor_descarga_{ocorr['id']}"
+                    )
+                    valor_descarga = converter_valor_brl(valor_descarga_txt)
+                with col_cd:
+                    complementar_descarga = st.text_input("Complementar descarga", help="Obrigatório se houve pagamento de descarga.",
+                                                          disabled=not descarga_sim, key=f"compl_descarga_{ocorr['id']}")
+
+                st.markdown("##### 💲 Taxa TDE/TDA")
+                st.markdown("**Houve Taxa TDE/TDA?***")
+                col_ts, col_tn = st.columns(2)
+                k_ts, k_tn = f"taxa_sim_{ocorr['id']}", f"taxa_nao_{ocorr['id']}"
+                with col_ts: taxa_sim = st.checkbox("Sim", key=k_ts, on_change=_marcar_exclusivo, args=(k_ts, k_tn))
+                with col_tn: taxa_nao = st.checkbox("Não", key=k_tn, on_change=_marcar_exclusivo, args=(k_tn, k_ts))
+                col_tde, col_tda = st.columns(2)
+                with col_tde: taxa_tde = st.checkbox("TDE", help="Tipo da taxa (obrigatório se houve taxa).", key=f"taxa_tde_{ocorr['id']}", disabled=not taxa_sim)
+                with col_tda: taxa_tda = st.checkbox("TDA", help="Tipo da taxa (obrigatório se houve taxa).", key=f"taxa_tda_{ocorr['id']}", disabled=not taxa_sim)
+                # Valor e complementar da taxa só liberam com "Sim" e pelo menos um tipo (TDE e/ou TDA)
+                taxa_liberada = taxa_sim and (taxa_tde or taxa_tda)
+                col_vt, col_ct = st.columns(2)
+                with col_vt:
+                    valor_taxa_txt = st.text_input(
+                        "Valor da taxa (R$)", placeholder="0,00", help="Obrigatório se houve taxa. Aceita zero.",
+                        disabled=not taxa_liberada, key=f"valor_taxa_{ocorr['id']}"
+                    )
+                    valor_taxa = converter_valor_brl(valor_taxa_txt)
+                with col_ct:
+                    complementar_taxa = st.text_input("Complementar da taxa", help="Obrigatório se houve taxa.",
+                                                      disabled=not taxa_liberada, key=f"compl_taxa_{ocorr['id']}")
                 
                 col_m, col_o = st.columns(2)
                 with col_m: numero_manifesto = st.text_input("N° Manifesto")
@@ -1691,9 +1960,24 @@ if st.session_state.get("login", False):
 
                 imagem_finalizacao = st.file_uploader("📎 Anexar img finalização", type=["png", "jpg", "jpeg"])
 
-                if st.form_submit_button("Concluir Finalização"):
-                    if not complemento.strip():
-                        st.warning("O campo Complementar é obrigatório.")
+                if st.button("Concluir Finalização", key=f"btn_concluir_fin_{ocorr['id']}"):
+                    erros_fin = []
+                    if descarga_sim == descarga_nao:
+                        erros_fin.append("Informe se houve pagamento de descarga (Sim ou Não).")
+                    elif descarga_sim:
+                        if valor_descarga is None: erros_fin.append("Informe o valor do pagamento da descarga em R$ (pode ser 0).")
+                        if not complementar_descarga.strip(): erros_fin.append("Informe o complementar da descarga.")
+                    if taxa_sim == taxa_nao:
+                        erros_fin.append("Informe se houve Taxa TDE/TDA (Sim ou Não).")
+                    elif taxa_sim:
+                        if not (taxa_tde or taxa_tda): erros_fin.append("Indique se a taxa é TDE ou TDA.")
+                        if valor_taxa is None: erros_fin.append("Informe o valor da taxa em R$ (pode ser 0).")
+                        if not complementar_taxa.strip(): erros_fin.append("Informe o complementar da taxa.")
+
+                    if erros_fin:
+                        # Avisos flutuantes vermelhos no canto inferior direito
+                        for erro_fin in erros_fin:
+                            st.toast(erro_fin, icon="❌")
                     else:
                         # 🟢 1. INICIA A BARRA DE PROGRESSO
                         barra_progresso = st.progress(0, text="Iniciando a finalização...")
@@ -1714,9 +1998,24 @@ if st.session_state.get("login", False):
                         # 🟢 3. ATUALIZA PARA 60% (O TRABALHO PESADO)
                         barra_progresso.progress(60, text="Atualizando e gerando e-mail de finalização...")
                         
+                        houve_descarga = descarga_sim
+                        houve_taxa = taxa_sim
+                        tipo_taxa = ", ".join(t for t, marcado in (("TDE", taxa_tde), ("TDA", taxa_tda)) if marcado)
+                        dados_extras = {
+                            "houve_descarga": houve_descarga,
+                            "valor_descarga": float(valor_descarga) if houve_descarga else None,
+                            "complementar_descarga": complementar_descarga.strip() if houve_descarga else None,
+                            "houve_taxa": houve_taxa,
+                            "tipo_taxa": tipo_taxa if houve_taxa else None,
+                            "valor_taxa": float(valor_taxa) if houve_taxa else None,
+                            "complementar_taxa": complementar_taxa.strip() if houve_taxa else None,
+                        }
+                        # Cada complementar tem a sua coluna; a coluna antiga "complementar" não recebe mais resumo
+                        complemento = ""
+
                         sucesso, mensagem = finalizar_ocorrencia(
                             ocorr, complemento, st.session_state[chave_data], st.session_state[chave_hora],
-                            imagem_url_fin, observacao_final, numero_manifesto
+                            imagem_url_fin, observacao_final, numero_manifesto, dados_extras=dados_extras
                         )
 
                         if sucesso:
@@ -1734,7 +2033,14 @@ if st.session_state.get("login", False):
         @st.dialog("✏️ Editar Ocorrência")
         def dialog_editar_ocorrencia(ocorr):
             st.markdown(f"**Ticket #:** {str(ocorr.get('numero_ticket', '-'))[-5:]}")
-            
+
+            # Esconde a legenda "Press Enter to submit form" dos campos (só neste modal)
+            st.markdown("""
+                <style>
+                [data-testid="InputInstructions"] { display: none !important; }
+                </style>
+            """, unsafe_allow_html=True)
+
             with st.form(f"form_edit_ocorr_{ocorr['id']}"):
                 c1, c2 = st.columns(2)
                 
@@ -1876,7 +2182,9 @@ if st.session_state.get("login", False):
                     st.rerun() # Força atualização imediata da tela toda se o usuário quiser
 
             lista_focais = sorted(set((ocorr.get('focal') or 'Sem Focal').strip() for ocorr in ocorrencias_abertas), key=lambda x: str(x).lower())
-            focal_selecionado = st.selectbox("🔎 Filtrar por Focal:", options=["Todos"] + lista_focais, index=0)
+            col_filtro_focal, _ = st.columns([1, 3])  # filtro com largura reduzida
+            with col_filtro_focal:
+                focal_selecionado = st.selectbox("🔎 Filtrar por Focal:", options=["Todos"] + lista_focais, index=0)
 
             if focal_selecionado != "Todos":
                 ocorrencias_filtradas = [ocorr for ocorr in ocorrencias_abertas if (ocorr.get('focal') or 'Sem Focal').strip() == focal_selecionado]
@@ -2053,13 +2361,35 @@ if st.session_state.get("login", False):
     #    ABA 3 - FINALIZADAS 
     # =========================   
     if st.session_state.aba_ativa == "aba3":
+        # Cards com largura FIXA (360px): não encolhem nem esticam com a tela; as linhas quebram conforme o espaço
+        st.markdown("""
+            <style>
+            .block-container { padding-top: 1.5rem !important; padding-left: 2rem !important; padding-right: 2rem !important; }
+            .block-container hr { margin: 0.5rem 0 !important; }
+            .block-container h2 { padding-top: 0.25rem !important; padding-bottom: 0.25rem !important; }
+            [data-testid="stDownloadButton"] { display: flex !important; justify-content: flex-end !important; }
+            [data-testid="stDownloadButton"] button { white-space: nowrap !important; padding: 0.25rem 0.5rem !important; min-height: 0 !important; }
+            [data-testid="stDownloadButton"] button p { font-size: 0.85rem !important; white-space: nowrap !important; }
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(4)) {
+                flex-wrap: wrap !important;
+                gap: 0.75rem !important;
+            }
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(4)) > [data-testid="stColumn"] {
+                flex: 0 0 360px !important;
+                width: 360px !important;
+                min-width: 360px !important;
+                max-width: 360px !important;
+            }
+            </style>
+        """, unsafe_allow_html=True)
         st.header("Ocorrências Finalizadas")
         
         # --- 🟢 Lógica do Calendário (Primeiro dia do mês até Hoje) ---
         hoje = obter_data_hora_atual_brasil().date()
         primeiro_dia_mes = hoje.replace(day=1)
         
-        col_filtros, col_botao = st.columns([4, 1])
+        # Data e pesquisa por NF na mesma linha (1/4 da largura cada, igual ao de Focal); download compacto à direita
+        col_filtros, col_nf, _, col_baixar = st.columns([2, 2, 3, 2])
         with col_filtros:
             datas_selecionadas = st.date_input(
                 "📅 Filtrar por Data de Finalização (Início - Fim):",
@@ -2067,11 +2397,6 @@ if st.session_state.get("login", False):
                 max_value=hoje,
                 format="DD/MM/YYYY"
             )
-        
-        with col_botao:
-            st.write("") # Espaçamento
-            st.write("")
-            atualizar = st.button("🔄 Buscar Dados", use_container_width=True)
 
         # O st.date_input retorna uma tupla. Precisamos garantir que o usuário escolheu as duas datas.
         if isinstance(datas_selecionadas, tuple):
@@ -2088,9 +2413,6 @@ if st.session_state.get("login", False):
         data_inicio_str = data_inicio.strftime("%Y-%m-%d 00:00:00")
         data_fim_str = data_fim.strftime("%Y-%m-%d 23:59:59")
 
-        if atualizar:
-            carregar_ocorrencias_finalizadas.clear()
-
         # Busca no banco APENAS os dados do período selecionado
         with st.spinner("Buscando registros no banco de dados..."):
             ocorrencias_finalizadas = carregar_ocorrencias_finalizadas(data_inicio_str, data_fim_str)
@@ -2100,24 +2422,21 @@ if st.session_state.get("login", False):
         if not ocorrencias_finalizadas:
             st.info(f"ℹ️ Nenhuma ocorrência finalizada encontrada no período de {data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}.")
         else:
-            col1, col2 = st.columns([1, 2])
-            with col1:
+            with col_nf:
                 filtro_nf = st.text_input("🔎 Pesquisar por NF neste período:", "", max_chars=10)
-            with col2:
-                if st.button("📤 Exportar Excel"):
-                    try:
-                        df = pd.DataFrame(ocorrencias_finalizadas)
-                        output = BytesIO()
-                        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                            df.to_excel(writer, index=False, sheet_name='Finalizadas')
-                        st.download_button(
-                            label=f"⬇️ Baixar Relatório Excel ({len(ocorrencias_finalizadas)} registros)",
-                            data=output.getvalue(),
-                            file_name=f"finalizadas_{data_inicio.strftime('%d%m%Y')}_a_{data_fim.strftime('%d%m%Y')}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        )
-                    except Exception as e:
-                        st.error(f"Erro ao exportar para Excel: {e}")
+            with col_baixar:
+                st.write("") # Espaçamento para alinhar o botão com o campo
+                st.write("")
+                try:
+                    st.download_button(
+                        label="📥 Baixar Excel",
+                        data=gerar_excel_finalizadas(ocorrencias_finalizadas),
+                        file_name=f"finalizadas_{data_inicio.strftime('%d%m%Y')}_a_{data_fim.strftime('%d%m%Y')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        help=f"Baixar relatório em Excel do período ({len(ocorrencias_finalizadas)} registros)",
+                    )
+                except Exception as e:
+                    st.error(f"Erro ao exportar para Excel: {e}")
 
             if filtro_nf:
                 ocorrencias_filtradas = [
@@ -2233,7 +2552,7 @@ if st.session_state.get("login", False):
 </div>
 <div style='margin-bottom: 10px;'>{link_abertura}{link_fin}</div>
 <div style='font-size: 0.8em; color: #a0a0b0;'>
-<strong>Comp:</strong> {seguro(ocorr.get('complementar', '-'))}
+<strong>Comp:</strong> {seguro(texto_complementares(ocorr) or '-')}
 </div>
 </div>
 """
@@ -2549,7 +2868,7 @@ if st.session_state.get("login", False):
         Este sistema envia e-mails automáticos para clientes baseados nas janelas de tempo cadastradas.
         Os e-mails são enviados utilizando:
         - **Remetente:** ticket@clicklogtransportes.com.br
-        - **Servidor SMTP:** smtp.resend.com (Com fallback para Gmail)
+        - **Servidor SMTP:** smtp.gmail.com
         """)
         
         col1, col2 = st.columns(2)
@@ -2726,11 +3045,26 @@ if st.session_state.get("login", False):
     if st.session_state.aba_ativa == "aba7":
         st.header("Cadastros Gerais")
         
-        menu_cadastro = st.radio(
-            "Selecione o cadastro:",
-            ["Motoristas", "Cidades", "Filiais", "Clientes", "Configurações"], # <-- Adicionado 'Filiais'
-            horizontal=True
-        )
+        opcoes_cadastro = ["Motoristas", "Cidades", "Filiais", "Clientes", "Configurações"]
+
+        if st.session_state.get("menu_cadastro_ativo") not in opcoes_cadastro:
+            st.session_state.menu_cadastro_ativo = opcoes_cadastro[0]
+
+        def _selecionar_cadastro(opcao):
+            st.session_state.menu_cadastro_ativo = opcao
+
+        # Seletor de cadastro em botões (o ativo fica destacado)
+        for col_cad, opcao_cad in zip(st.columns(len(opcoes_cadastro)), opcoes_cadastro):
+            with col_cad:
+                st.button(
+                    opcao_cad,
+                    key=f"btn_cadastro_{opcao_cad}",
+                    use_container_width=True,
+                    type="primary" if st.session_state.menu_cadastro_ativo == opcao_cad else "secondary",
+                    on_click=_selecionar_cadastro,
+                    args=(opcao_cad,),
+                )
+        menu_cadastro = st.session_state.menu_cadastro_ativo
 
         def safe_int(valor):
             if pd.isna(valor) or valor is None or valor == "":
@@ -2854,6 +3188,36 @@ if st.session_state.get("login", False):
                     st.rerun()
             # --------------------------------------------------------------
             
+            # Mostra nome em MAIÚSCULO e e-mails em minúsculo enquanto digita (o valor é normalizado ao salvar)
+            st.markdown("""
+                <style>
+                input[aria-label^="Nome"] { text-transform: uppercase; }
+                input[aria-label^="E-mail"], input[aria-label^="Emails"] { text-transform: lowercase; }
+                </style>
+            """, unsafe_allow_html=True)
+
+            # Campo CNPJ aceita só números (digitado ou colado com máscara), no máximo 14 dígitos.
+            # O script é instalado uma única vez na página principal e vale para os campos que começam com "CNPJ".
+            st.components.v1.html("""
+                <script>
+                const doc = window.parent.document;
+                if (!window.parent.__cnpjSoNumeros) {
+                    window.parent.__cnpjSoNumeros = true;
+                    doc.addEventListener('input', function (e) {
+                        const el = e.target;
+                        if (!el || el.tagName !== 'INPUT') return;
+                        const rotulo = el.getAttribute('aria-label') || '';
+                        if (!rotulo.startsWith('CNPJ')) return;
+                        const limpo = el.value.replace(/\\D/g, '').slice(0, 14);
+                        if (limpo === el.value) return;
+                        const setter = Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype, 'value').set;
+                        setter.call(el, limpo);
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                    }, true);
+                }
+                </script>
+            """, height=0)
+
             lista_focais_disp = carregar_focal_supabase()
             opcao_gerencia = st.radio("Ação:", ["➕ Cadastrar Novo", "✏️ Editar Existente"], horizontal=True, key="radio_cli")
             st.markdown("---")
@@ -2888,7 +3252,12 @@ if st.session_state.get("login", False):
                     st.markdown("---")
                     if st.form_submit_button("Salvar Novo Cliente"):
                         erros = []
-                        
+
+                        # Normalização antes de validar e gravar
+                        nome = normalizar_nome_cliente(nome)
+                        email_p = normalizar_emails(email_p)
+                        email_c = normalizar_emails(email_c)
+
                         # Validação de Nome
                         if not nome: 
                             erros.append("Nome do cliente é obrigatório.")
@@ -2979,7 +3348,12 @@ if st.session_state.get("login", False):
                             
                             if st.form_submit_button("Salvar Alterações"):
                                 erros_edit = []
-                                
+
+                                # Normalização antes de validar e gravar
+                                n_nome = normalizar_nome_cliente(n_nome)
+                                n_ep = normalizar_emails(n_ep)
+                                n_ec = normalizar_emails(n_ec)
+
                                 # Validação de Nome na Edição
                                 if not n_nome: 
                                     erros_edit.append("Nome é obrigatório.")
@@ -3045,7 +3419,10 @@ if st.session_state.get("login", False):
                     "J1", "J2", "J3", "J4", "J5"
                 ]
                 df_view = df_view[ordem_colunas]
-                
+
+                # Ordem alfabética pelo nome do cliente (ignorando maiúsculas/minúsculas)
+                df_view = df_view.sort_values("Cliente", key=lambda s: s.str.lower(), ignore_index=True)
+
                 st.dataframe(df_view, use_container_width=True, hide_index=True)
 
         # =========================================================
