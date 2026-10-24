@@ -2566,172 +2566,59 @@ if st.session_state.get("login", False):
     # =========================
     if st.session_state.aba_ativa == "aba4":
         st.header("Configurações")
+        st.session_state.usuarios_cache = None  # recarrega a lista de usuários a cada execução completa; cliques na lista (fragmento) usam o cache
         st.subheader("🔑 Alterar Senha")
-        with st.form("form_alterar_senha"):
-            senha_atual = st.text_input("Senha Atual", type="password")
-            nova_senha = st.text_input("Nova Senha", type="password")
-            confirmar_senha = st.text_input("Confirmar Nova Senha", type="password")
-            
-            alterar_senha = st.form_submit_button("Alterar Senha")
-            
-            if alterar_senha:
-                if not senha_atual or not nova_senha or not confirmar_senha:
-                    st.error("❌ Todos os campos são obrigatórios.")
-                elif nova_senha != confirmar_senha:
-                    st.error("❌ As senhas não coincidem.")
-                else:
-                    try:
-                        usuario = st.session_state.username
-                        response = supabase.table("usuarios").select("*").eq("nome_usuario", usuario).execute()
-                        
-                        if response.data:
-                            usuario_data = response.data[0]
-                            if verificar_senha(senha_atual, usuario_data["senha_hash"]):
-                                nova_senha_hash = hash_senha(nova_senha)
-                                update_response = supabase.table("usuarios").update({
-                                    "senha_hash": nova_senha_hash
-                                }).eq("nome_usuario", usuario).execute()
-                                
-                                if update_response.data: st.success("✅ Senha alterada com sucesso!")
-                                else: st.error("❌ Erro ao atualizar senha.")
-                            else: st.error("❌ Senha atual incorreta.")
-                        else: st.error("❌ Usuário não encontrado.")
-                    except Exception as e: st.error(f"❌ Erro ao alterar senha: {e}")
+        col_form_senha, _ = st.columns([1, 3])  # form com largura reduzida
+        with col_form_senha:
+            with st.form("form_alterar_senha"):
+                senha_atual = st.text_input("Senha Atual", type="password")
+                nova_senha = st.text_input("Nova Senha", type="password")
+                confirmar_senha = st.text_input("Confirmar Nova Senha", type="password")
+                
+                alterar_senha = st.form_submit_button("Alterar Senha")
+                
+                if alterar_senha:
+                    if not senha_atual or not nova_senha or not confirmar_senha:
+                        st.error("❌ Todos os campos são obrigatórios.")
+                    elif nova_senha != confirmar_senha:
+                        st.error("❌ As senhas não coincidem.")
+                    else:
+                        try:
+                            usuario = st.session_state.username
+                            response = supabase.table("usuarios").select("*").eq("nome_usuario", usuario).execute()
+                            
+                            if response.data:
+                                usuario_data = response.data[0]
+                                if verificar_senha(senha_atual, usuario_data["senha_hash"]):
+                                    nova_senha_hash = hash_senha(nova_senha)
+                                    update_response = supabase.table("usuarios").update({
+                                        "senha_hash": nova_senha_hash
+                                    }).eq("nome_usuario", usuario).execute()
+                                    
+                                    if update_response.data: st.success("✅ Senha alterada com sucesso!")
+                                    else: st.error("❌ Erro ao atualizar senha.")
+                                else: st.error("❌ Senha atual incorreta.")
+                            else: st.error("❌ Usuário não encontrado.")
+                        except Exception as e: st.error(f"❌ Erro ao alterar senha: {e}")
         
         # 🟢 AQUI: Verificação corrigida para painel do Admin
         if st.session_state.is_admin:
             st.subheader("Administração de Usuários")
-            admin_tab1, admin_tab2, admin_tab3 = st.tabs(["Listar Usuários", "Adicionar Usuário", "Editar/Excluir Usuário"])
+            admin_tab1, admin_tab2 = st.tabs(["Listar Usuários", "Adicionar Usuário"])
             
             with admin_tab1:
-                try:
-                    response = supabase.table("usuarios").select("*").execute()
-                    if response.data:
-                        usuarios = response.data
-                        df_usuarios = pd.DataFrame([
-                            {
-                                "Nome Completo": u["nome_usuario"],
-                                "Login": u.get("login_usuario", "-") or "-",
-                                "CPF": mascarar_cpf_lgpd(u.get("cpf_usuario", "-")),
-                                "Cargo": u.get("cargo", "-") or "-",
-                                "E-mail": u.get("email", "-") or "-",
-                                "Telefone": u.get("telefone", "-") or "-",
-                                "Unidade": u.get("unidade", "Não definido") or "Não definido",
-                                "Admin": "Sim" if u.get("is_admin", False) else "Não",
-                                "Último Login": u.get("ultimo_login", "-") or "-"
-                            }
-                            for u in usuarios
-                        ])
-                        st.dataframe(df_usuarios, use_container_width=True, hide_index=True)
-                    else: 
-                        st.info("Nenhum usuário encontrado.")
-                except Exception as e: 
-                    st.error(f"Erro ao listar usuários: {e}")
-            
-            with admin_tab2:
-                if "form_user_id" not in st.session_state:
-                    st.session_state.form_user_id = 0
+                # Fragmento: o clique na linha reexecuta só a lista (não o app inteiro) e a lista vem do cache
+                @st.fragment
+                def lista_usuarios_admin():
+                    try:
+                        if st.session_state.get("usuarios_cache") is None:
+                            st.session_state.usuarios_cache = supabase.table("usuarios").select("*").execute().data
+                        if st.session_state.usuarios_cache:
+                            # Ordem alfabética pelo nome
+                            usuarios = sorted(st.session_state.usuarios_cache, key=lambda u: str(u.get("nome_usuario") or "").casefold())
 
-                with st.form(f"form_adicionar_usuario_{st.session_state.form_user_id}", clear_on_submit=False):
-                    col_u1, col_u2 = st.columns(2)
-                    with col_u1:
-                        novo_usuario = st.text_input("Nome Completo*")
-                        novo_login = st.text_input("Login de Acesso*")
-                        cpf_novo = st.text_input("CPF (apenas números)*", max_chars=14) 
-                        email_usuario = st.text_input("E-mail corporativo*").lower() # 🟢 Força minúsculo
-                        telefone_usuario = st.text_input("Telefone com DDD (apenas números)*", placeholder="Ex: 51999999999", max_chars=11)
-                    with col_u2:
-                        opcoes_cargos = ["Diretor(a)", "Coordenador(a)", "Gerente", "Supervisor(a)", "Analista Monitoramento", "Focal"]
-                        cargo_usuario = st.selectbox("Cargo/Função*", options=opcoes_cargos, index=None)
-                        nova_senha_usuario = st.text_input("Senha*", type="password")
-                        confirmar_senha_usuario = st.text_input("Confirmar Senha*", type="password")
-
-                    is_admin = st.checkbox("Usuário Administrador")
-
-                    if st.session_state.is_admin: 
-                        unidade_novo_usuario = st.selectbox("Unidade*", lista_filiais)
-                    else:
-                        dados_usuario = supabase.table("usuarios").select("unidade").eq("nome_usuario", st.session_state.username).execute().data
-                        unidade_novo_usuario = dados_usuario[0]["unidade"] if dados_usuario else "N/A"
-                        st.text_input("Unidade", value=unidade_novo_usuario, disabled=True)
-
-                    adicionar_usuario = st.form_submit_button("Adicionar Usuário")
-
-                    if adicionar_usuario:
-                        erros_usr = []
-                        if not novo_usuario or not novo_login or not cpf_novo or not nova_senha_usuario or not confirmar_senha_usuario or not email_usuario or not telefone_usuario or not cargo_usuario:
-                            erros_usr.append("Todos os campos marcados com * são obrigatórios.")
-                        if nova_senha_usuario != confirmar_senha_usuario:
-                            erros_usr.append("As senhas não coincidem.")
-                        if not validar_email(email_usuario):
-                            erros_usr.append("Formato de e-mail inválido.")
-                        if not validar_telefone(telefone_usuario):
-                            erros_usr.append("Telefone inválido. Exige 10 ou 11 dígitos numéricos.")
-                        if not validar_cpf(cpf_novo):
-                            erros_usr.append("CPF inválido. Exige 11 dígitos numéricos válidos.")
-
-                        if erros_usr:
-                            for erro in erros_usr: st.error(f"❌ {erro}")
-                        else:
-                            try:
-                                cpf_limpo = re.sub(r'[^0-9]', '', cpf_novo)
-                                login_tratado = novo_login.lower().strip()
-                                
-                                check_login = supabase.table("usuarios").select("id").eq("login_usuario", login_tratado).execute()
-                                check_cpf = supabase.table("usuarios").select("id").eq("cpf_usuario", formatar_cpf(cpf_limpo)).execute()
-                                
-                                if check_login.data: 
-                                    st.error("❌ Este login de acesso já está em uso.")
-                                elif check_cpf.data:
-                                    st.error("❌ Este CPF já está cadastrado no sistema.")
-                                else:
-                                    senha_hash = hash_senha(nova_senha_usuario)
-                                    tel_limpo = re.sub(r'[^0-9]', '', telefone_usuario)
-                                    
-                                    insert_response = supabase.table("usuarios").insert({
-                                        "nome_usuario": novo_usuario,
-                                        "login_usuario": login_tratado,
-                                        "cpf_usuario": formatar_cpf(cpf_limpo), 
-                                        "senha_hash": senha_hash,
-                                        "email": email_usuario.lower().strip(),
-                                        "telefone": tel_limpo,
-                                        "cargo": cargo_usuario,
-                                        "is_admin": is_admin, 
-                                        "unidade": unidade_novo_usuario,
-                                        "criado_em": obter_data_hora_atual_brasil().isoformat()
-                                    }).execute()
-
-                                    if insert_response.data:
-                                        st.success("✅ Usuário adicionado com sucesso!")
-                                        carregar_focal_supabase.clear() 
-                                        st.session_state.form_user_id += 1 
-                                        tm.sleep(1.5)
-                                        st.rerun()
-                                    else: 
-                                        st.error("❌ Erro ao adicionar usuário.")
-                            except Exception as e: 
-                                st.error(f"❌ Erro ao adicionar usuário: {e}")
-            
-            with admin_tab3:
-                try:
-                    response = supabase.table("usuarios").select("*").execute()
-                    if response.data:
-                        usuarios = response.data
-                        
-                        # 🟢 CORREÇÃO: Ignora registros com nome vazio (None) e garante que são strings
-                        nomes_usuarios = sorted([str(u["nome_usuario"]) for u in usuarios if u.get("nome_usuario")])
-                        
-                        # 🟢 CORREÇÃO 1: index=None faz o selectbox começar vazio
-                        usuario_selecionado = st.selectbox(
-                            "Selecione um usuário para editar", 
-                            options=nomes_usuarios, 
-                            index=None, 
-                            placeholder="Selecionar..."
-                        )
-                        
-                        if usuario_selecionado:
-                            usuario_data = next((u for u in usuarios if u["nome_usuario"] == usuario_selecionado), None)
-                            if usuario_data:
+                            @st.dialog("Editar Usuário", width="large")
+                            def dialog_editar_usuario(usuario_data):
                                 with st.form("form_editar_usuario"):
                                     st.markdown(f"**Editando Usuário:** {usuario_data['nome_usuario']}")
                                     
@@ -2822,7 +2709,7 @@ if st.session_state.get("login", False):
                                                     
                                                     if update_response.data: 
                                                         st.success("✅ Usuário atualizado com sucesso!")
-                                                        carregar_focal_supabase.clear()
+                                                        carregar_focal_supabase.clear(); st.session_state.usuarios_cache = None
                                                         tm.sleep(1)
                                                         st.rerun()
                                                     else: 
@@ -2838,13 +2725,149 @@ if st.session_state.get("login", False):
                                                 delete_response = supabase.table("usuarios").delete().eq("id", usuario_data["id"]).execute()
                                                 if delete_response.data:
                                                     st.success("✅ Usuário excluído com sucesso!")
-                                                    carregar_focal_supabase.clear() 
+                                                    carregar_focal_supabase.clear(); st.session_state.usuarios_cache = None 
                                                     tm.sleep(1)
                                                     st.rerun()
                                                 else: st.error("❌ Erro ao excluir usuário.")
                                             except Exception as e: st.error(f"❌ Erro ao excluir usuário: {e}")
-                    else: st.info("Nenhum usuário encontrado.")
-                except Exception as e: st.error(f"Erro ao carregar usuários: {e}")
+
+                            # Tabela com linha clicável: cada linha é um container com um botão invisível por cima (CSS),
+                            # então clicar em qualquer ponto da linha abre o diálogo de edição.
+                            st.markdown("""
+                                <style>
+                                [class*="st-key-linha_usuario_"] { position: relative; border-bottom: 1px solid rgba(255,255,255,0.08); padding: 0.35rem 0.25rem; }
+                                [class*="st-key-linha_usuario_"]:hover { background: rgba(0,196,255,0.10); }
+                                [class*="st-key-linha_usuario_"] p { font-size: 0.85rem; margin: 0; overflow-wrap: anywhere; }
+                                [class*="st-key-btn_usuario_"] { position: absolute; inset: 0; z-index: 2; }
+                                [class*="st-key-btn_usuario_"] button { width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+                                .cab-usuarios p { font-size: 0.8rem; font-weight: 700; color: #00c4ff; margin: 0; }
+                                </style>
+                            """, unsafe_allow_html=True)
+                            st.caption("Clique em uma linha para editar ou excluir o usuário.")
+                            larguras_usr = [2.2, 1.2, 1.4, 1.6, 2.4, 1.3, 1.2, 0.7, 1.6]
+                            with st.container(key="cab_usuarios"):
+                                for col, titulo in zip(st.columns(larguras_usr), ["Nome Completo", "Login", "CPF", "Cargo", "E-mail", "Telefone", "Unidade", "Admin", "Último Login"]):
+                                    col.markdown(f"<div class='cab-usuarios'><p>{titulo}</p></div>", unsafe_allow_html=True)
+                            for i, u in enumerate(usuarios):
+                                valores_usr = [
+                                    u.get("nome_usuario") or "-",
+                                    u.get("login_usuario") or "-",
+                                    mascarar_cpf_lgpd(u.get("cpf_usuario", "-")),
+                                    u.get("cargo") or "-",
+                                    u.get("email") or "-",
+                                    u.get("telefone") or "-",
+                                    u.get("unidade") or "Não definido",
+                                    "Sim" if u.get("is_admin", False) else "Não",
+                                    u.get("ultimo_login") or "-",
+                                ]
+                                with st.container(key=f"linha_usuario_{i}"):
+                                    for col, valor in zip(st.columns(larguras_usr), valores_usr):
+                                        col.markdown(str(valor).replace("_", "\\_"))
+                                    if st.button(" ", key=f"btn_usuario_{i}"):
+                                        dialog_editar_usuario(u)
+                        else: 
+                            st.info("Nenhum usuário encontrado.")
+                    except Exception as e: 
+                        st.error(f"Erro ao listar usuários: {e}")
+
+                lista_usuarios_admin()
+
+            with admin_tab2:
+                if "form_user_id" not in st.session_state:
+                    st.session_state.form_user_id = 0
+
+                # Esconde a legenda "Press Enter to submit form" dos campos (só neste formulário)
+                st.markdown("""
+                    <style>
+                    [data-testid="InputInstructions"] { display: none !important; }
+                    /* Mostra já na digitação a caixa que será salva (nome MAIÚSCULO; login e e-mail minúsculos) */
+                    input[aria-label^="Nome Completo"] { text-transform: uppercase; }
+                    input[aria-label^="Login de Acesso"], input[aria-label^="E-mail corporativo"] { text-transform: lowercase; }
+                    </style>
+                """, unsafe_allow_html=True)
+
+                with st.form(f"form_adicionar_usuario_{st.session_state.form_user_id}", clear_on_submit=False):
+                    col_u1, col_u2, _ = st.columns([1.2, 1.2, 1.6])  # inputs mais estreitos, form segue na largura total
+                    with col_u1:
+                        novo_usuario = st.text_input("Nome Completo*").upper()  # nome sempre em maiúsculo
+                        novo_login = st.text_input("Login de Acesso*").lower()  # login sempre em minúsculo
+                        cpf_novo = st.text_input("CPF (apenas números)*", max_chars=14) 
+                        email_usuario = st.text_input("E-mail corporativo*").lower() # 🟢 Força minúsculo
+                        telefone_usuario = st.text_input("Telefone com DDD (apenas números)*", placeholder="Ex: 51999999999", max_chars=11)
+                    with col_u2:
+                        opcoes_cargos = ["Diretor(a)", "Coordenador(a)", "Gerente", "Supervisor(a)", "Analista Monitoramento", "Focal"]
+                        cargo_usuario = st.selectbox("Cargo/Função*", options=opcoes_cargos, index=None, placeholder=" ")
+                        nova_senha_usuario = st.text_input("Senha*", type="password")
+                        confirmar_senha_usuario = st.text_input("Confirmar Senha*", type="password")
+
+                    is_admin = st.checkbox("Usuário Administrador")
+
+                    col_unidade, _ = st.columns([1.2, 2.8])  # select com largura reduzida
+                    with col_unidade:
+                        if st.session_state.is_admin:
+                            unidade_novo_usuario = st.selectbox("Unidade*", lista_filiais)
+                        else:
+                            dados_usuario = supabase.table("usuarios").select("unidade").eq("nome_usuario", st.session_state.username).execute().data
+                            unidade_novo_usuario = dados_usuario[0]["unidade"] if dados_usuario else "N/A"
+                            st.text_input("Unidade", value=unidade_novo_usuario, disabled=True)
+
+                    adicionar_usuario = st.form_submit_button("Adicionar Usuário")
+
+                    if adicionar_usuario:
+                        erros_usr = []
+                        if not novo_usuario or not novo_login or not cpf_novo or not nova_senha_usuario or not confirmar_senha_usuario or not email_usuario or not telefone_usuario or not cargo_usuario:
+                            erros_usr.append("Todos os campos marcados com * são obrigatórios.")
+                        if nova_senha_usuario != confirmar_senha_usuario:
+                            erros_usr.append("As senhas não coincidem.")
+                        if not validar_email(email_usuario):
+                            erros_usr.append("Formato de e-mail inválido.")
+                        if not validar_telefone(telefone_usuario):
+                            erros_usr.append("Telefone inválido. Exige 10 ou 11 dígitos numéricos.")
+                        if not validar_cpf(cpf_novo):
+                            erros_usr.append("CPF inválido. Exige 11 dígitos numéricos válidos.")
+
+                        if erros_usr:
+                            for erro in erros_usr: st.error(f"❌ {erro}")
+                        else:
+                            try:
+                                cpf_limpo = re.sub(r'[^0-9]', '', cpf_novo)
+                                login_tratado = novo_login.lower().strip()
+                                
+                                check_login = supabase.table("usuarios").select("id").eq("login_usuario", login_tratado).execute()
+                                check_cpf = supabase.table("usuarios").select("id").eq("cpf_usuario", formatar_cpf(cpf_limpo)).execute()
+                                
+                                if check_login.data: 
+                                    st.error("❌ Este login de acesso já está em uso.")
+                                elif check_cpf.data:
+                                    st.error("❌ Este CPF já está cadastrado no sistema.")
+                                else:
+                                    senha_hash = hash_senha(nova_senha_usuario)
+                                    tel_limpo = re.sub(r'[^0-9]', '', telefone_usuario)
+                                    
+                                    insert_response = supabase.table("usuarios").insert({
+                                        "nome_usuario": novo_usuario,
+                                        "login_usuario": login_tratado,
+                                        "cpf_usuario": formatar_cpf(cpf_limpo), 
+                                        "senha_hash": senha_hash,
+                                        "email": email_usuario.lower().strip(),
+                                        "telefone": tel_limpo,
+                                        "cargo": cargo_usuario,
+                                        "is_admin": is_admin, 
+                                        "unidade": unidade_novo_usuario,
+                                        "criado_em": obter_data_hora_atual_brasil().isoformat()
+                                    }).execute()
+
+                                    if insert_response.data:
+                                        st.success("✅ Usuário adicionado com sucesso!")
+                                        carregar_focal_supabase.clear(); st.session_state.usuarios_cache = None 
+                                        st.session_state.form_user_id += 1 
+                                        tm.sleep(1.5)
+                                        st.rerun()
+                                    else: 
+                                        st.error("❌ Erro ao adicionar usuário.")
+                            except Exception as e: 
+                                st.error(f"❌ Erro ao adicionar usuário: {e}")
+            
 
         # ====================================================================
         # 🟢 EXECUÇÃO DE MODAIS TARDIOS (EVITA O ERRO "Only one dialog")
